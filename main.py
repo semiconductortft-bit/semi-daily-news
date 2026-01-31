@@ -2,12 +2,14 @@ import os
 import time
 import feedparser
 import urllib.parse
+import base64
 from datetime import datetime, timedelta, timezone
 from google import genai
 from elevenlabs.client import ElevenLabs
 from collections import defaultdict
 from urllib.parse import urlparse
-from dateutil import parser as date_parser # 날짜 파싱용
+from dateutil import parser as date_parser
+from googlenewsdecoder import gnewsdecoder  # URL 디코딩용
 
 # 1. 환경 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -35,228 +37,116 @@ def parse_date(date_str):
     except:
         return datetime.now()
 
+# 2. 키워드 및 타겟 매체 설정 (확장 버전)
+KEYWORDS = [
+    'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
+    'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 
+    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics'
+]
+
+GLOBAL_TARGETS = {
+    "semiengineering.com": "Semiconductor Engineering",
+    "3dincites.com": "3D InCites",
+    "digitimes.com": "Digitimes",
+    "eetimes.com": "EE Times",
+    "trendforce.com": "TrendForce",
+    "semiconductor-digest.com": "Semi Digest",
+    "yolegroup.com": "Yole Group",
+    "kipost.net": "KIPOST"
+}
+
+KOREA_TARGETS = {
+    "thelec.kr": "TheElec",
+    "etnews.com": "ETNews",
+    "zdnet.co.kr": "ZDNet Korea",
+    "hankyung.com": "Hankyung Insight"
+}
+
 def fetch_news():
-    print("📡 뉴스 데이터 수집 및 정밀 필터링 중... (최근 24시간 이내 + 10개 제한)")
-    
-    # 한국 시간(KST) 기준 현재 요일 확인 (0: 월, 1: 화, ..., 5: 토, 6: 일)
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     weekday = now_kst.weekday()
 
-    # 1. 일요일 발행 중단 로직
+    # [Q3 반영] 일요일(6)은 발행 중단
     if weekday == 6:
-        print("📅 오늘은 일요일입니다. 리포트를 발행하지 않습니다.")
+        print("📅 일요일은 리포트를 휴간합니다.")
         return None
 
-    # 2. 요일에 따른 검색 기간(when) 설정
-    # 월요일(0)이면 7일(7d), 그 외 평일은 1일(1d)
+    # [Q3 반영] 월요일(0)은 7일치(주간), 나머지는 1일치(데일리)
     search_period = "7d" if weekday == 0 else "1d"
-    print(f"📡 뉴스 데이터 수집 중... (검색 기간: {search_period})")
-    
-    # 2. 타겟 매체 설정
-    GLOBAL_TARGETS = {
-    "digitimes.com": "Digitimes",
-    "electronicsweekly.com": "Electronics Weekly",
-    "eetimes.com": "EE Times",
-    "trendforce.com": "TrendForce",
-    "semiconductor-digest.com": "Semi Digest",
-    "semiengineering.com": "Semiconductor Engineering",
-    "3dincites.com": "3D InCites",
-    "yolegroup.com": "Yole Group",
-    "ddaily.co.kr": "Digital Daily"
-    }
-    KOREA_TARGETS = {
-        "thelec.kr": "TheElec",
-        "zdnet.co.kr": "ZDNet Korea",
-        "dt.co.kr": "Digital Times",
-        "hankyung.com": "Hankyung Insight",
-        "etnews.com": "ETNews",
-        "kipost.net": "KIPOST"
-    }
-    ALL_TARGETS = {**GLOBAL_TARGETS, **KOREA_TARGETS}
+    cutoff_hours = 168 if weekday == 0 else 30
+    cutoff_date = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
 
-KEYWORDS = [
-    # 기존 핵심 키워드
-    'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 'micron', 'hbf',
-    'wafer', 'chiplet', 'interposer','intel'
-    
-    # 공정 및 구조 확장
-    'Hybrid Bonding', 'CoWoS', 'FOWLP', 'PLP', '3D IC', 'TSV',
-    
-    # 소재 및 재료개발 (TFT 핵심)
-    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'Substrate material',
-    
-    # 차세대 아키텍처
-    'CXL', 'BSPDN', 'UCIe', 'Silicon Photonics', 'Heterogeneous Integration'
-    ]
-    
-# 3. RSS 수집 함수 (search_period 반영)
-def fetch_rss(targets, region, lang):
+    all_targets = {**GLOBAL_TARGETS, **KOREA_TARGETS}
+    raw_articles = []
+
+    def get_rss_entries(targets, region, lang):
         site_query = " OR ".join([f"site:{d}" for d in targets.keys()])
         kw_query = " OR ".join(KEYWORDS)
         final_query = f"({site_query}) AND ({kw_query})"
         encoded_query = urllib.parse.quote(final_query)
-        # 설정된 기간(search_period)을 URL에 반영
         url = f"https://news.google.com/rss/search?q={encoded_query}+when:{search_period}&hl={lang}&gl={region}&ceid={region}:{lang}"
-        return feedparser.parse(url).entriesentries
+        return feedparser.parse(url).entries
 
-    raw_articles = []
-    print("   - 글로벌/국내 소스 스캔 중...")
-    raw_articles.extend(fetch_rss(GLOBAL_TARGETS, "US", "en-US"))
-    raw_articles.extend(fetch_rss(KOREA_TARGETS, "KR", "ko"))
+    print(f"📡 뉴스 수집 중... (모드: {'주간 하이라이트' if weekday==0 else '데일리'})")
+    raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
+    raw_articles.extend(get_rss_entries(KOREA_TARGETS, "KR", "ko"))
 
-    # 4. [핵심] 날짜 기반 강제 필터링 & 정제
     valid_articles = []
     seen_links = set()
-    # --- 추가: 제외 키워드 설정 (주식, 증권, 투자 유도 등) ---
-    EXCLUDE_KEYWORDS = [
-        '주가', '증시', '종목', '상한가', '하한가', '매수', '매도', '수익률', 
-        '개미', '외인', '기관', '테마주', '급등', '급락', '투자정보', '증권사',
-        'stock', 'shares', 'trading', 'investment', 'price target', 'buy rating'
-    ]
-    # ----------------------------------------------------
-    print(f"   - 1차 수집된 기사 수: {len(raw_articles)}개")
 
     for e in raw_articles:
         if e.link in seen_links: continue
-
-        # URL 정제: 구글 뉴스 리디렉션 파라미터를 최소화하고 안전하게 인코딩
-        original_link = e.link
-        # 만약 URL에 한글이나 특수문자가 섞여 리디렉션 오류가 난다면 아래와 같이 처리
-        clean_url = urllib.parse.unquote(original_link).split("&url=")[-1].split("&")[0] if "&url=" in original_link else original_link
-    
-        # (A) 날짜 파싱 및 검증
+        
         try:
-            # feedparser가 파싱해준 날짜가 있으면 사용, 없으면 문자열 파싱 시도
-            if hasattr(e, 'published_parsed') and e.published_parsed:
-                # struct_time을 datetime 객체로 변환
-                pub_date = datetime(*e.published_parsed[:6], tzinfo=timezone.utc)
-            else:
-                pub_date = date_parser.parse(e.published)
-                # timezone 정보가 없으면 UTC로 가정
-                if pub_date.tzinfo is None:
-                    pub_date = pub_date.replace(tzinfo=timezone.utc)
-            
-            # (B) 24시간 이내인지 확인 (오래된 기사 즉시 폐기)
-            if pub_date < cutoff_date:
-                continue
+            pub_date = date_parser.parse(e.published)
+            if pub_date.tzinfo is None: pub_date = pub_date.replace(tzinfo=timezone.utc)
+            if pub_date < cutoff_date: continue
+        except: continue
 
-        except Exception as err:
-            # 날짜 파싱 실패 시 안전하게 스킵 (오래된 기사일 확률 높음)
-            continue
+        # [Q1 반영] URL 디코딩 시도 (리디렉션 방지)
+        try:
+            decoded_url = gnewsdecoder(e.link)
+            original_url = decoded_url if decoded_url else e.link
+        except:
+            original_url = e.link
 
-        # --- 추가: 순수 반도체 뉴스 필터링 (주식 관련 내용 제외) ---
-        title = e.title.lower()
-        summary = e.summary.lower() if hasattr(e, 'summary') else ""
-        
-        # 제외 키워드가 제목이나 요약에 포함되어 있는지 확인
-        is_stock_news = any(kw in title or kw in summary for kw in EXCLUDE_KEYWORDS)
-        
-        if is_stock_news:
-            # 주식 관련 기사는 건너뜁니다.
-            continue
-        # -------------------------------------------------------
-        
-        seen_links.add(e.link)
-        e['parsed_date'] = pub_date # 정렬을 위해 저장
-        
-        # (C) 출처명 매핑
-        domain = urlparse(e.link).netloc.replace("www.", "")
+        domain = urlparse(original_url).netloc.replace("www.", "")
         source_name = "News"
-        for t_domain, t_name in ALL_TARGETS.items():
+        for t_domain, t_name in all_targets.items():
             if t_domain in domain:
                 source_name = t_name
                 break
-        if source_name == "News" and hasattr(e, 'source'):
-            source_name = e.source.title
         
         e['display_source'] = source_name
+        e['parsed_date'] = pub_date
+        e['clean_url'] = original_url
         valid_articles.append(e)
+        seen_links.add(e.link)
 
-        # (C) 출처명 매핑 부분에서 URL 저장 시 clean_url 사용
-        e['link'] = original_link # 또는 정제된 clean_url
-
-    print(f"   - 24시간 이내 유효 기사: {len(valid_articles)}개")
-
-    # 5. 매체별 쿼터제 (다양성 확보)
+    # [Q3 반영] 매체별 균형 선별 (최소 1개, 최대 2개) 후 총 10개 채우기
     buckets = defaultdict(list)
-    for e in valid_articles:
-        buckets[e['display_source']].append(e)
+    for e in valid_articles: buckets[e['display_source']].append(e)
     
-    # 각 버킷 최신순 정렬
-    for s in buckets:
-        buckets[s].sort(key=lambda x: x['parsed_date'], reverse=True)
-
     final_selection = []
-    selected_titles = set()
-    
-    # 우선순위: 지정 매체 리스트 순서대로 1개씩 뽑기
-    priority_order = list(ALL_TARGETS.values())
-    
-    # 1라운드: 매체별 1개씩 (최대 2개까지 허용)
-    for _ in range(2): # 최대 2바퀴를 돕니다.
-        for source_name in priority_order:
-            if buckets[source_name]:
-                article = buckets[source_name].pop(0)
-                if article.title not in selected_titles:
-                    final_selection.append(article)
-                    selected_titles.add(article.title)
-            if len(final_selection) >= 10: break
-        if len(final_selection) >= 10: break
+    sources = list(buckets.keys())
+    if not sources: return "최근 관련 뉴스가 없습니다."
 
-    # 만약 10개가 안 채워졌다면 나머지에서 최신순으로 보충
-    if len(final_selection) < 10:
-        remaining = []
-        for s_list in buckets.values(): remaining.extend(s_list)
-        remaining.sort(key=lambda x: x['parsed_date'], reverse=True)
-        for article in remaining:
-            if len(final_selection) >= 10: break
-            if article.title not in selected_titles:
-                final_selection.append(article)
-                selected_titles.add(article.title)
+    # 라운드 로빈 방식으로 10개 추출
+    idx = 0
+    while len(final_selection) < 10 and any(buckets.values()):
+        src = sources[idx % len(sources)]
+        if buckets[src]:
+            final_selection.append(buckets[src].pop(0))
+        idx += 1
 
-    # [핵심] URL 리디렉션 해결을 위해 google news 링크 대신 'clean_url' 전달 로직 확인
-    # RSS에서 제공하는 link가 가끔 인코딩 이슈를 일으키므로 
-    # 프롬프트에서 HTML <a> 태그 형식을 직접 쓰도록 유도합니다.
-    return final_selection # 객체 리스트 형태로 반환하여 generate_content에 전달
-
-    # 2라운드: 남은 기사 중 최신순으로 채우기
-    remaining = []
-    for source_list in buckets.values():
-        remaining.extend(source_list)
-    remaining.sort(key=lambda x: x['parsed_date'], reverse=True)
-
-    # ★ 10개 제한 설정
-    TARGET_COUNT = 10
-    
-    for article in remaining:
-        if len(final_selection) >= TARGET_COUNT: break
-        if article.title not in selected_titles:
-            final_selection.append(article)
-            selected_titles.add(article.title)
-
-    # 6. 최종 텍스트 생성
-    formatted_text = []
-    # 결과 보여줄 때도 최신순 정렬
     final_selection.sort(key=lambda x: x['parsed_date'], reverse=True)
-
+    
+    formatted_text = []
     for i, e in enumerate(final_selection):
-        clean_summ = e.summary.replace("<b>", "").replace("</b>", "").replace("&nbsp;", " ") if hasattr(e, 'summary') else ""
-        
-        # AI 프롬프트에 들어갈 포맷
-        item = (
-            f"[{i+1}] Source: {e['display_source']}\n"
-            f"Date: {e['parsed_date'].strftime('%Y-%m-%d %H:%M')}\n"
-            f"Title: {e.title}\n"
-            f"URL: {e.link}\n"
-            f"Summary: {clean_summ[:300]}\n"
-        )
+        item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\nSummary: {e.summary[:200] if hasattr(e, 'summary') else ''}\n"
         formatted_text.append(item)
-
-    if not formatted_text:
-        return "최근 24시간 이내의 관련 뉴스가 없습니다."
-
-    print(f"✅ 최종 선별 완료: {len(formatted_text)}개 (10개 제한, 24시간 이내 엄수)")
+    
     return "\n".join(formatted_text)
 
 def generate_content(news_text):
