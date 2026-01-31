@@ -38,44 +38,67 @@ def parse_date(date_str):
 def fetch_news():
     print("📡 뉴스 데이터 수집 및 정밀 필터링 중... (최근 24시간 이내 + 10개 제한)")
     
-    # 1. 30시간 컷오프 설정 (UTC 기준)
-    # 기사 날짜가 이 시간보다 이전이면 무조건 버립니다.
-    now_utc = datetime.now(timezone.utc)
-    cutoff_date = now_utc - timedelta(hours=30)
+    # 한국 시간(KST) 기준 현재 요일 확인 (0: 월, 1: 화, ..., 5: 토, 6: 일)
+    KST = timezone(timedelta(hours=9))
+    now_kst = datetime.now(KST)
+    weekday = now_kst.weekday()
+
+    # 1. 일요일 발행 중단 로직
+    if weekday == 6:
+        print("📅 오늘은 일요일입니다. 리포트를 발행하지 않습니다.")
+        return None
+
+    # 2. 요일에 따른 검색 기간(when) 설정
+    # 월요일(0)이면 7일(7d), 그 외 평일은 1일(1d)
+    search_period = "7d" if weekday == 0 else "1d"
+    print(f"📡 뉴스 데이터 수집 중... (검색 기간: {search_period})")
     
     # 2. 타겟 매체 설정
     GLOBAL_TARGETS = {
-        "digitimes.com": "Digitimes",
-        "electronicsweekly.com": "Electronics Weekly",
-        "eetimes.com": "EE Times",
-        "trendforce.com": "TrendForce",
-        "semiconductor-digest.com": "Semi Digest",
-        "kipost.net": "KIPOST",       # 콜론과 이름 추가
-        "ddaily.co.kr": "Digital Daily" # 콜론과 이름 추가
+    "digitimes.com": "Digitimes",
+    "electronicsweekly.com": "Electronics Weekly",
+    "eetimes.com": "EE Times",
+    "trendforce.com": "TrendForce",
+    "semiconductor-digest.com": "Semi Digest",
+    "semiengineering.com": "Semiconductor Engineering",
+    "3dincites.com": "3D InCites",
+    "yolegroup.com": "Yole Group",
+    "ddaily.co.kr": "Digital Daily"
     }
     KOREA_TARGETS = {
         "thelec.kr": "TheElec",
         "zdnet.co.kr": "ZDNet Korea",
         "dt.co.kr": "Digital Times",
         "hankyung.com": "Hankyung Insight",
-        "etnews.com": "ETNews"
+        "etnews.com": "ETNews",
+        "kipost.net": "KIPOST"
     }
     ALL_TARGETS = {**GLOBAL_TARGETS, **KOREA_TARGETS}
 
-    KEYWORDS = [
-        'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
-        'wafer', 'chiplet', 'interposer'
-    ]
+KEYWORDS = [
+    # 기존 핵심 키워드
+    'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 'micron', 'hbf',
+    'wafer', 'chiplet', 'interposer','intel'
     
-    # 3. RSS 수집 함수
+    # 공정 및 구조 확장
+    'Hybrid Bonding', 'CoWoS', 'FOWLP', 'PLP', '3D IC', 'TSV',
+    
+    # 소재 및 재료개발 (TFT 핵심)
+    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'Substrate material',
+    
+    # 차세대 아키텍처
+    'CXL', 'BSPDN', 'UCIe', 'Silicon Photonics', 'Heterogeneous Integration'
+]
+    
+# 3. RSS 수집 함수 (search_period 반영)
     def fetch_rss(targets, region, lang):
         site_query = " OR ".join([f"site:{d}" for d in targets.keys()])
         kw_query = " OR ".join(KEYWORDS)
         final_query = f"({site_query}) AND ({kw_query})"
         encoded_query = urllib.parse.quote(final_query)
-        # when:1d 파라미터는 구글에게 요청하는 1차 필터
-        url = f"https://news.google.com/rss/search?q={encoded_query}+when:1d&hl={lang}&gl={region}&ceid={region}:{lang}"
-        return feedparser.parse(url).entries
+        # 설정된 기간(search_period)을 URL에 반영
+        url = f"https://news.google.com/rss/search?q={encoded_query}+when:{search_period}&hl={lang}&gl={region}&ceid={region}:{lang}"
+        return feedparser.parse(url).entriesentries
 
     raw_articles = []
     print("   - 글로벌/국내 소스 스캔 중...")
@@ -412,17 +435,33 @@ def save_newsletter(content):
 if __name__ == "__main__":
     print("🚀 반도체 리포트 생산 공정 개시\n")
     try:
-        print("📡 뉴스 수집 중...")
         raw_data = fetch_news()
         
-        if not raw_data or len(raw_data) < 50:
-            print("⚠️ 뉴스 데이터가 부족합니다.")
-            raw_data = "Sample semiconductor packaging news for testing."
-        
-        print(f"✅ {len(raw_data)} 바이트의 뉴스 데이터 수집 완료")
-        
-        print("\n🤖 AI 컨텐츠 생성 중...")
-        full_text = generate_content(raw_data)
+        # 일요일이거나 데이터가 없는 경우 종료
+        if raw_data is None:
+            print("🛑 발행 조건 미충족(일요일 등)으로 공정을 종료합니다.")
+            exit(0) 
+
+        # 월요일 주간 뉴스 대응을 위한 데이터 포맷팅
+        if isinstance(raw_data, list):
+            # 뉴스 개수가 10개보다 많을 수 있으므로 최종 선별된 리스트 처리
+            formatted_news = []
+            for i, e in enumerate(raw_data[:10]): # 최대 10개 제한
+                clean_summ = e.summary.replace("<b>", "").replace("</b>", "") if hasattr(e, 'summary') else ""
+                item = (
+                    f"[{i+1}] Source: {e['display_source']}\n"
+                    f"Date: {e['parsed_date'].strftime('%Y-%m-%d %H:%M')}\n"
+                    f"Title: {e.title}\n"
+                    f"URL: {e.link}\n"
+                    f"Summary: {clean_summ[:300]}\n"
+                )
+                formatted_news.append(item)
+            news_text = "\n".join(formatted_news)
+        else:
+            news_text = raw_data
+
+        # AI 컨텐츠 생성 및 이후 공정 진행
+        full_text = generate_content(news_text)
         
         print(f"✅ {len(full_text)} 바이트의 컨텐츠 생성 완료")
         
