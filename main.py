@@ -170,13 +170,32 @@ def fetch_news():
     # 우선순위: 지정 매체 리스트 순서대로 1개씩 뽑기
     priority_order = list(ALL_TARGETS.values())
     
-    # 1라운드: 각 매체별 최신 1개
-    for source_name in priority_order:
-        if buckets[source_name]:
-            article = buckets[source_name].pop(0)
+    # 1라운드: 매체별 1개씩 (최대 2개까지 허용)
+    for _ in range(2): # 최대 2바퀴를 돕니다.
+        for source_name in priority_order:
+            if buckets[source_name]:
+                article = buckets[source_name].pop(0)
+                if article.title not in selected_titles:
+                    final_selection.append(article)
+                    selected_titles.add(article.title)
+            if len(final_selection) >= 10: break
+        if len(final_selection) >= 10: break
+
+    # 만약 10개가 안 채워졌다면 나머지에서 최신순으로 보충
+    if len(final_selection) < 10:
+        remaining = []
+        for s_list in buckets.values(): remaining.extend(s_list)
+        remaining.sort(key=lambda x: x['parsed_date'], reverse=True)
+        for article in remaining:
+            if len(final_selection) >= 10: break
             if article.title not in selected_titles:
                 final_selection.append(article)
                 selected_titles.add(article.title)
+
+    # [핵심] URL 리디렉션 해결을 위해 google news 링크 대신 'clean_url' 전달 로직 확인
+    # RSS에서 제공하는 link가 가끔 인코딩 이슈를 일으키므로 
+    # 프롬프트에서 HTML <a> 태그 형식을 직접 쓰도록 유도합니다.
+    return final_selection # 객체 리스트 형태로 반환하여 generate_content에 전달
 
     # 2라운드: 남은 기사 중 최신순으로 채우기
     remaining = []
@@ -263,7 +282,7 @@ def generate_content(news_text):
     **4. Technical Term (용어 해설)**
     - `### 📚 Technical Term`
     - **[용어명 (한글/영어)]**
-    - 정의와 패키징 공정에서의 중요성을 비전문가도 이해하기 쉽게 3문장 이내로 설명하세요.
+    - Technical Term: 'BSPDN', 'Glass Substrate', 'Hybrid Bonding' 등 반도체 전문가 수준의 심도 있는 기술 용어 1개를 선정해 상세히 설명하세요.
     
     ---
     
@@ -272,7 +291,7 @@ def generate_content(news_text):
     - **본문**: 뉴스레터의 핵심만 요약하여 40초 분량으로 작성하세요.
     - **어조**: "최근 ~라는 소식입니다.", "~할 전망입니다." 등 차분하고 신뢰감 있는 뉴스 브리핑 톤(하십시오체 위주)을 사용하세요.
     - 지시문(BGM 등)은 절대 포함하지 마세요.
-    
+    - 마지막 문구: 보고서의 맨 마지막은 반드시 "오늘도 좋은 하루 보내시기 바랍니다."로 끝맺음 하세요.    
     ---
     
     [분석할 뉴스 데이터]:
