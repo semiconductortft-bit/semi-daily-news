@@ -299,34 +299,44 @@ def generate_audio(script):
 
 def save_newsletter(content):
     import os
+    import shutil
+    from datetime import datetime, timedelta, timezone
+
+    # 1. 오늘 날짜 가져오기 (한국 시간 기준)
     KST = timezone(timedelta(hours=9))
-    date_str = datetime.now(KST).strftime("%Y-%m-%d")
+    date_str = datetime.now(KST).strftime("%Y-%m-%d") # 예: "2026-01-31"
     
-    # 1. 날짜별 저장 폴더 경로 설정 (예: newsletter/2026-01-29)
+    # 2. 날짜별 폴더 경로 설정 및 생성
+    # 'newsletter/2026-01-31' 이라는 폴더를 만듭니다.
     folder_path = f"newsletter/{date_str}"
     if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+        os.makedirs(folder_path, exist_ok=True)
 
-    # 2. 오디오 파일 이동 (폴더 안으로)
+    # 3. 생성된 오디오 파일(radio.mp3)을 해당 날짜 폴더로 이동
     audio_filename = "radio.mp3"
-    audio_path = os.path.join(folder_path, audio_filename)
-    if os.path.exists("radio.mp3"):
-        os.rename("radio.mp3", audio_path)
+    target_audio_path = os.path.join(folder_path, audio_filename)
     
-    # 3. 뉴스레터 내용에 오디오 플레이어 경로 수정
-    # 배포용 index.md에서 이 파일을 참조할 수 있게 경로를 설정합니다.
-    audio_player = ""
-    if os.path.exists(audio_path):
-        audio_player = f"<audio controls style='width: 100%;'><source src='{folder_path}/{audio_filename}' type='audio/mpeg'></audio>\n\n---\n\n"
+    if os.path.exists("radio.mp3"):
+        shutil.move("radio.mp3", target_audio_path)
+        print(f"✅ 오디오 파일을 {folder_path} 폴더로 옮겼습니다.")
 
-    # 4. 아카이빙용 파일 저장 (폴더 내부)
+    # 4. 각 페이지용 오디오 플레이어 태그 만들기
+    # 이 페이지(index.md)와 오디오(radio.mp3)는 같은 폴더에 있게 되므로 파일 이름만 씁니다.
+    audio_player_html = f"<audio controls style='width: 100%;'><source src='{audio_filename}' type='audio/mpeg'></audio>\n\n---\n\n"
+
+    # 5. [중요] 날짜별 고유 페이지 저장
+    # newsletter/2026-01-31/index.md 경로에 저장합니다.
     with open(os.path.join(folder_path, "index.md"), "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(audio_player_html + content)
+    print(f"📝 고유 주소용 페이지 생성 완료: {folder_path}/index.md")
 
-    # 5. 최신 배포용 파일 저장 (저장소 최상위 루트)
-    # GitHub Pages는 보통 루트의 index.md를 첫 화면으로 보여줍니다.
+    # 6. 메인 페이지(최상위 index.md) 업데이트
+    # 사용자가 처음 접속했을 때 바로 최신 글을 볼 수 있게 루트 폴더에도 저장합니다.
+    # 이때 오디오 경로는 폴더명을 포함해야 메인에서 소리가 납니다.
+    main_audio_player = f"<audio controls style='width: 100%;'><source src='{folder_path}/{audio_filename}' type='audio/mpeg'></audio>\n\n---\n\n"
     with open("index.md", "w", encoding="utf-8") as f:
-        f.write(audio_player + content)
+        f.write(main_audio_player + content)
+    print("🏠 메인 페이지 업데이트 완료")
 
 if __name__ == "__main__":
     print("🚀 반도체 리포트 생산 공정 개시\n")
