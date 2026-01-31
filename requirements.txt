@@ -2,3 +2,4 @@ feedparser
 google-genai
 elevenlabs
 python-dateutil
+googlenewsdecoder
