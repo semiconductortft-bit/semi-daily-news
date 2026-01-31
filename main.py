@@ -422,7 +422,7 @@ if __name__ == "__main__":
         email_body = full_text.replace("\n", "<br>")
         
         # 3. 실제 발송 대상 설정 및 함수 실행
-        target_email = "kimdonghwi@dwchem.co.kr"
+        target_email = "keenhwi@gmail.com"
         send_email(mail_subject, email_body, target_email)
         
         print("\n✅✅✅ 모든 공정이 성공적으로 완료되었습니다! ✅✅✅")
