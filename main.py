@@ -384,7 +384,25 @@ if __name__ == "__main__":
         
         print("\n📝 뉴스레터 마크다운 생성 중...")
         save_newsletter(full_text)
+
+        # --- [추가] 이메일 발송 단계 ---
+        print("\n📧 이메일 발송 준비 중...")
+        
+        # 1. 메일 제목 설정 (날짜 포함)
+        KST = timezone(timedelta(hours=9))
+        today_str = datetime.now(KST).strftime("%Y-%m-%d")
+        mail_subject = f"📦 [반도체 데일리 뉴스] {today_str} 리포트"
+        
+        # 2. 메일 본문 가독성 처리 (마크다운의 줄바꿈을 HTML의 <br>로 변환)
+        # full_text는 AI가 생성한 전체 내용입니다.
+        email_body = full_text.replace("\n", "<br>")
+        
+        # 3. 실제 발송 대상 설정 및 함수 실행
+        target_email = "kimdonghwi@dwchem.co.kr"
+        send_email(mail_subject, email_body, target_email)
+        
         print("\n✅✅✅ 모든 공정이 성공적으로 완료되었습니다! ✅✅✅")
+        
     except Exception as error:
         print(f"\n⚠️ 시스템 경보: {error}")
         raise error
