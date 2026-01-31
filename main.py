@@ -68,9 +68,9 @@ def fetch_news():
     weekday = now_kst.weekday()
 
     # [Q3 반영] 일요일(6)은 발행 중단
-    #if weekday == 6:
-    #    print("📅 일요일은 리포트를 휴간합니다.")
-    #    return None
+    if weekday == 6:
+        print("📅 일요일은 리포트를 휴간합니다.")
+        return None
 
     # [Q3 반영] 월요일(0)은 7일치(주간), 나머지는 1일치(데일리)
     search_period = "7d" if weekday == 0 else "1d"
