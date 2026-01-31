@@ -104,12 +104,18 @@ def fetch_news():
             if pub_date < cutoff_date: continue
         except: continue
 
-        # [Q1 반영] URL 디코딩 시도 (리디렉션 방지)
+        # [딕셔너리 에러 해결 지점]
         try:
-            decoded_url = gnewsdecoder(e.link)
-            original_url = decoded_url if decoded_url else e.link
+            decoded_res = gnewsdecoder(e.link)
+            if isinstance(decoded_res, dict):
+                original_url = decoded_res.get('decoded_url', e.link)
+            else:
+                original_url = decoded_res if decoded_res else e.link
         except:
             original_url = e.link
+
+        # 문자열 보장
+        original_url = str(original_url)
 
         domain = urlparse(original_url).netloc.replace("www.", "")
         source_name = "News"
