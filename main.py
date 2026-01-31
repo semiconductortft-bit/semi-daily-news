@@ -363,6 +363,10 @@ def send_email(subject, body, to_email):
         print(f"❌ 이메일 발송 실패: {e}")
 
 if __name__ == "__main__":
+    # 이 부분을 추가하여 프로그램 전체에서 사용할 한국 날짜를 고정합니다.
+    KST = timezone(timedelta(hours=9))
+    now_kst = datetime.now(KST)
+    date_str = now_kst.strftime("%Y-%m-%d")
     print("🚀 반도체 리포트 생산 공정 개시\n")
     try:
         raw_data = fetch_news()
