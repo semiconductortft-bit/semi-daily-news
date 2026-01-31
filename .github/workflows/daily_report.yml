@@ -1,18 +1,18 @@
-name: Daily Semiconductor News Report
+name: Daily Semiconductor News Update
 
 on:
   schedule:
-    # 매일 UTC 23:00 (한국 시간 오전 8시)에 실행
-    - cron: '0 23 * * *'
-  workflow_dispatch: # 수동으로도 실행 가능하게 설정
+    - cron: '0 23 * * *'  # 매일 한국 시간 아침 8시에 실행
+  workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write    # 파일 쓰기 권한 필수!
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,19 +21,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install google-genai elevenlabs feedparser python-dateutil googlenewsdecoder
 
-      - name: Run News Script
+      - name: Run script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-        run: python main.py  # 실행할 파일명으로 수정하세요
+        run: python main.py
 
       - name: Commit and Push changes
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add .
-          # 변경사항이 있을 때만 커밋
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Daily Report: $(date +'%Y-%m-%d')" && git push)
+          git commit -m "🚀 News Update: $(date +'%Y-%m-%d')" || exit 0
+          git push
