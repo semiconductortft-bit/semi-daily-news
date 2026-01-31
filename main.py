@@ -88,10 +88,10 @@ KEYWORDS = [
     
     # 차세대 아키텍처
     'CXL', 'BSPDN', 'UCIe', 'Silicon Photonics', 'Heterogeneous Integration'
-]
+    ]
     
 # 3. RSS 수집 함수 (search_period 반영)
-    def fetch_rss(targets, region, lang):
+def fetch_rss(targets, region, lang):
         site_query = " OR ".join([f"site:{d}" for d in targets.keys()])
         kw_query = " OR ".join(KEYWORDS)
         final_query = f"({site_query}) AND ({kw_query})"
