@@ -389,5 +389,27 @@ if __name__ == "__main__":
         print(f"\n⚠️ 시스템 경보: {error}")
         raise error
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
+def send_email(subject, body, to_email):
+    # 깃허브 시크릿에 저장한 이메일 계정 정보 사용
+    gmail_user = os.getenv("GMAIL_USER") 
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD") # 일반 비밀번호가 아닌 '앱 비밀번호'
+
+    msg = MIMEMultipart()
+    msg['From'] = gmail_user
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'html')) # 마크다운 대신 HTML로 보내면 더 예쁩니다.
+
+    try:
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(gmail_user, gmail_password)
+        server.send_message(msg)
+        server.close()
+        print("📧 이메일 발송 성공!")
+    except Exception as e:
+        print(f"❌ 이메일 발송 실패: {e}")
 
