@@ -1,4 +1,4 @@
-<audio controls style='width: 100%;'><source src='newsletter/2026-02-02/radio.mp3' type='audio/mpeg'></audio>
+<audio controls style='width: 100%;'><source src='radio.mp3' type='audio/mpeg'></audio>
 
 ---
 
