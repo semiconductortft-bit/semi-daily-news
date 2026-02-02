@@ -337,33 +337,25 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [최종 수정] 텍스트 + '전체보기 버튼' 확실하게 보내는 함수 ---
+# --- [수정] 버튼이 포함된 깔끔한 전송 함수 ---
 def send_kakao_message(briefing_text, report_url):
-    # 1. 토큰 발급
     access_token = get_new_kakao_token()
     if not access_token:
-        print("⚠️ 토큰 발급 실패로 전송을 건너뜁니다.")
         return
 
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
-    
-    # 2. 헤더 설정
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 3. 텍스트 길이 제한 처리 (카카오 API 한계: 1000자)
-    # 1000자가 넘으면 전송이 실패하므로 900자에서 안전하게 자릅니다.
-    MAX_LENGTH = 900
-    
-    if len(briefing_text) > MAX_LENGTH:
-        # 텍스트가 길면 자르고 안내 문구 추가
-        final_text = briefing_text[:MAX_LENGTH] + "\n\n...(다음 내용은 아래 버튼을 눌러 확인하세요)"
+    # 혹시 모를 길이 제한 (950자) 안전장치
+    if len(briefing_text) > 950:
+        final_text = briefing_text[:950] + "\n..."
     else:
         final_text = briefing_text
 
-    # 4. [핵심] 버튼을 명시적으로 리스트로 만들어서 넣습니다. (가장 확실한 방법)
+    # 텍스트 + 버튼 템플릿
     template = {
         "object_type": "text",
         "text": final_text,
@@ -371,131 +363,75 @@ def send_kakao_message(briefing_text, report_url):
             "web_url": report_url,
             "mobile_web_url": report_url
         },
-        # 👇 이 부분이 버튼을 강제로 만듭니다.
-        "buttons": [
-            {
-                "title": "리포트 전체 보기 🔗",
-                "link": {
-                    "web_url": report_url,
-                    "mobile_web_url": report_url
-                }
-            }
-        ]
+        "button_title": "리포트 전체 보기" # 하단 버튼 생성
     }
 
-    # 5. 데이터 포장 및 전송
-    payload = {
-        "template_object": json.dumps(template)
-    }
+    payload = {"template_object": json.dumps(template)}
 
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            print("✅ 카카오톡 전송 성공 (버튼 포함)")
+            print("✅ 카카오톡 전송 성공 (요약+제목 모드)")
         else:
             print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
         print(f"❌ 전송 중 에러: {e}")
 
-# --- [수정] 카카오톡 브리핑 멘트 생성 (10개 뉴스 전체 브리핑 모드) ---
+# --- [수정] Executive Summary + 뉴스 제목만 간결하게 생성 ---
 def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 멘트 생성 중... (뉴스 10개 전체 요약 모드)")
+    print("💬 카카오톡 브리핑 생성 중... (요약+제목 모드)")
     
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
     today_str = now.strftime("%m-%d")
     
-    # 1. 사용할 모델 리스트 (앞쪽 모델이 실패하면 뒤쪽 모델이 투입됩니다)
-    available_models = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.0-flash",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
-    ]
-    
-# 프롬프트: 10개 항목 모두 작성하도록 강력 지시
+    # 빠르고 똑똑한 Flash 모델 사용
+    model_name = "gemini-2.0-flash"
+
     prompt = f"""
-    당신은 테크 뉴스 전문 큐레이터입니다. 
-    제공된 [뉴스 데이터]에 있는 **모든 뉴스(최대 10개)**를 빠짐없이 브리핑에 포함하세요.
-    내용이 길어져도 괜찮으니 **절대 중간에 멈추지 말고 끝까지 작성**하세요.
+    당신은 테크 뉴스 큐레이터입니다.
+    제공된 [뉴스 데이터]를 바탕으로 카카오톡 브리핑 메시지를 작성하세요.
+    **전체 길이는 공백 포함 900자를 절대 넘지 않아야 합니다.**
 
     [입력 정보]
     - 날씨: {weather_str} (평택 기준)
     - 날짜: {today_str}
     
-    [*** 필수 작성 규칙 ***]
-    1. 입력된 뉴스 데이터가 10개라면, 10개 모두 요약해야 합니다.
-    2. 각 뉴스당 '핵심 요약' 1문장과 'Insight' 1문장을 작성하세요.
-    3. **가장 마지막에 '오늘의 한마디'와 '마무리 인사'가 없으면 실패로 간주합니다.**
+    [필수 작성 양식]
     
-    [출력 양식]
-    
-    ❄️ (날씨/기온 언급 + 따뜻한 인사 1문장)
+    ❄️ (날씨/기온 + 짧은 인사)
     
     ---
     
-    🚀 오늘의 브리핑 ({today_str})
+    🚀 오늘의 뉴스 브리핑({today_str})
     
-    1️⃣ (뉴스 제목)
-    (핵심 요약)
-    🗨️ *Insight*: (한 줄 평)
+    💡 **Executive Summary**
+    (전체 시장 흐름을 아우르는 3~4문장의 핵심 요약)
     
-    2️⃣ (뉴스 제목)
-    ...
+    📰 **Headlines**
+    1. (뉴스 1 제목)
+    2. (뉴스 2 제목)
+    3. (뉴스 3 제목)
+    4. (뉴스 4 제목)
+    5. (뉴스 5 제목)
+    6. (뉴스 6 제목)
+    7. (뉴스 7 제목)
+    ...(최대 10개까지, 길이에 맞춰 조절)
     
-    (이런 식으로 모든 뉴스를 순서대로 작성)
+    ---
     
-    🔟 (마지막 뉴스 제목 - 데이터 개수에 맞춰 번호 매기기)
-    (핵심 요약)
-    🗨️ *Insight*: (한 줄 평)
+    📌 (짧은 응원 한마디)
 
-    ---
-    
-    📌 오늘의 한마디
-    (반도체/테크 업계 종사자에게 힘이 되는 통찰이나 격려의 명언 1문장)
-    
-    🌟 (활기찬 마무리 인사 1문장)
-    
-    [데이터]:
+    [뉴스 데이터]:
     {news_text}
     """
-    # [핵심] 답변 길이를 최대로 늘리는 설정
-    generation_config = {
-        "max_output_tokens": 8192,  # 👈 기존보다 4배 늘림 (중간 끊김 방지)
-        "temperature": 0.7,
-    }
     
-# 모델 순환 시도
-    for model_name in available_models:
-        try:
-            print(f"   🔄 시도 중인 모델: {model_name}...")
-            # 긴 텍스트 생성을 위해 max_output_tokens를 넉넉하게 설정 (선택 사항이나 기본값도 충분하긴 함)
-            response = client.models.generate_content(model=model_name, contents=prompt)
-            
-            if response.text:
-                # 검증: 내용이 너무 짧거나(뉴스 3개 미만), 하단 인사가 없으면 재시도
-                if "오늘의 한마디" not in response.text:
-                    print("   ⚠️ 답변이 잘렸습니다(하단 누락). 더 강력한 모델로 재시도합니다...")
-                    continue
-                    
-                print(f"   ✅ 성공! ({model_name} 사용됨 / 길이: {len(response.text)}자)")
-                return response.text
-                
-        except Exception as e:
-            error_msg = str(e)
-            print(f"   ❌ {model_name} 실패: {error_msg[:100]}...")
-            
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                print("      ⏳ 쿼터 초과! 5초 대기...")
-                time.sleep(5)
-                continue
-            
-            time.sleep(2)
-            continue
-
-    print("   😱 모든 모델 가동 실패.")
-    return f"❄️ 오늘의 브리핑\n\n죄송합니다. 내용이 너무 길어 AI가 요약을 완료하지 못했습니다.\n아래 리포트 링크를 통해 전체 내용을 확인해주세요!"
+    try:
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        return response.text if response.text else "요약 생성 실패"
+    except Exception as e:
+        print(f"❌ 생성 에러: {e}")
+        return "브리핑 생성 중 오류가 발생했습니다."
 
 def generate_audio(script):
     try:
