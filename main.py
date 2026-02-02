@@ -351,9 +351,9 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 2. 고정 문구
+    # 2. 고정 문구 (URL 주소 텍스트는 뺍니다)
     header = "안녕하세요. 김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!"
-    footer = "👇 자세한 내용은 아래 버튼을 눌러 확인하세요!" # 멘트 수정
+    footer = "👇 자세한 내용은 아래 버튼을 눌러 확인하세요!" 
 
     # 3. 본문 길이 안전하게 자르기 (900자)
     safe_limit = 900
@@ -362,22 +362,22 @@ def send_kakao_message(briefing_text, report_url):
     else:
         body_content = briefing_text
 
-    # 4. 텍스트 조립 (URL 제거)
+    # 4. 텍스트 조립
     final_text = f"{header}\n\n{body_content}\n\n{footer}"
 
-    # 5. [핵심] 템플릿에 'buttons' 리스트를 직접 넣습니다. (무조건 나옵니다)
+    # 5. [핵심] 'buttons' 리스트를 직접 넣어 버튼 강제 생성
     template = {
         "object_type": "text",
         "text": final_text,
-        # 말풍선 자체 클릭 시 이동 (보조 수단)
+        # (1) 말풍선 배경 클릭 시 이동
         "link": {
             "web_url": report_url,
             "mobile_web_url": report_url
         },
-        # 👇 [여기가 중요] 버튼을 강제로 생성하는 코드
+        # (2) 하단 버튼 강제 생성 (이게 있어야 버튼이 보입니다)
         "buttons": [
             {
-                "title": "리포트 전체 보기 🔗",
+                "title": "리포트 전체 보기",
                 "link": {
                     "web_url": report_url,
                     "mobile_web_url": report_url
@@ -391,7 +391,7 @@ def send_kakao_message(briefing_text, report_url):
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            print("✅ 카카오톡 전송 성공 (버튼 강제 포함)")
+            print("✅ 카카오톡 전송 성공 (버튼 및 말풍선 링크 적용 완료)")
         else:
             print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
@@ -425,10 +425,6 @@ def generate_kakao_briefing(news_text, weather_str):
     - 날짜: {today_str}
     
     [필수 작성 양식]
-    
-    ❄️ (날씨/기온 + 짧은 인사)
-    
-    ---
     
     🚀 오늘의 브리핑 ({today_str})
     
