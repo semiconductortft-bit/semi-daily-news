@@ -76,175 +76,7 @@ KOREA_TARGETS = {
     "zdnet.co.kr": "ZDNet Korea",
     "hankyung.com": "Hankyung Insight"
 }
-
-# --- [기능 1] 날씨 정보 ---
-def get_weather_info():
-    try:
-        url = "https://api.open-meteo.com/v1/forecast?latitude=36.99&longitude=127.11&current=temperature_2m,weather_code,pm10&timezone=Asia%2FSeoul"
-        res = requests.get(url).json()
-        current = res.get('current', {})
-        temp = current.get('temperature_2m', 0)
-        code = current.get('weather_code', 0)
-        
-        weather_desc = "맑음"
-        if code in [1, 2, 3]: weather_desc = "구름 조금"
-        elif code in [45, 48]: weather_desc = "안개"
-        elif code in [51, 53, 55, 61, 63, 65]: weather_desc = "비"
-        elif code in [71, 73, 75, 85, 86]: weather_desc = "눈"
-        elif code >= 95: weather_desc = "뇌우"
-        return f"{temp}°C, {weather_desc}"
-    except: return "기온 정보 없음"
-
-# --- [기능 2] 카카오 토큰 자동 갱신 (핵심 기능) ---
-def get_new_kakao_token():
-    url = "https://kauth.kakao.com/oauth/token"
-    data = {
-        "grant_type": "refresh_token",
-        "client_id": KAKAO_REST_API_KEY,
-        "client_secret": KAKAO_CLIENT_SECRET, # 보안 코드가 필수입니다!
-        "refresh_token": KAKAO_REFRESH_TOKEN
-    }
-    
-    try:
-        response = requests.post(url, data=data)
-        tokens = response.json()
-        if "access_token" in tokens:
-            return tokens["access_token"]
-        else:
-            print(f"❌ 토큰 갱신 실패: {tokens}")
-            return None
-    except Exception as e:
-        print(f"❌ 토큰 요청 중 에러: {e}")
-        return None
-
-# --- [기능 3] 카카오톡 전송 ---
-def send_kakao_message(briefing_text, report_url):
-    # 1. 새로운 액세스 토큰 발급 (매일 아침 수행)
-    access_token = get_new_kakao_token()
-    if not access_token:
-        print("⚠️ 토큰 발급 실패로 카톡 전송을 건너뜁니다.")
-        return
-
-    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    
-    # 메시지 1: 알림 및 링크
-    payload1 = {"template_object": json.dumps({
-        "object_type": "text",
-        "text": f"김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!\n자세한 내용은 : {report_url}",
-        "link": {"web_url": report_url, "mobile_web_url": report_url},
-        "button_title": "리포트 바로가기"
-    })}
-
-    # 메시지 2: 요약 브리핑
-    payload2 = {"template_object": json.dumps({
-        "object_type": "text",
-        "text": briefing_text,
-        "link": {"web_url": report_url, "mobile_web_url": report_url}
-    })}
-
-    try:
-        requests.post(url, headers=headers, data=payload1)
-        time.sleep(1)
-        requests.post(url, headers=headers, data=payload2)
-        print("✅ 카카오톡 전송 성공")
-    except Exception as e:
-        print(f"❌ 전송 실패: {e}")
-
-# --- [수정] 카카오톡 브리핑 멘트 생성 (모델 로테이션 + 재시도 전략) ---
-def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 멘트 생성 중... (모델 로테이션 모드)")
-    
-    KST = timezone(timedelta(hours=9))
-    now = datetime.now(KST)
-    today_str = now.strftime("%m-%d")
-    
-    # 1. 사용할 모델 리스트 (앞쪽 모델이 실패하면 뒤쪽 모델이 투입됩니다)
-    available_models = [
-        "gemini-2.0-flash",       # 1순위: 가장 빠르고 가성비 좋음
-        "gemini-2.5-flash",       # 2순위: 최신 플래시 (가상)
-        "gemini-1.5-flash",       # 3순위: 안정적인 구형 플래시
-        "gemini-flash-latest",    # 4순위: 최신 별칭
-        "gemini-2.5-pro",         # 5순위: 고성능 (느릴 수 있음)
-        "gemini-pro-latest"       # 6순위: 최후의 보루
-    ]
-    
-    # 예시 스타일을 프롬프트에 직접 입력해서 학습시킵니다.
-    prompt = f"""
-    당신은 테크 뉴스 전문 큐레이터입니다. 
-    아래 [뉴스 데이터]를 바탕으로, 카카오톡으로 발송할 '핵심 요약 브리핑'을 작성해주세요.
-    
-    [입력 정보]
-    - 날씨: {weather_str} (평택 기준)
-    - 날짜: {today_str}
-    
-    [필수 작성 양식 - 이대로만 출력하세요]
-    
-    ❄️ (날씨와 기온을 언급하며, 따뜻한 안부 인사 1문장. 예: 오늘은 -5°C에 흐린 날씨, 따뜻하게 입으세요!)
-    
-    ---
-    
-    🚀 Semi-TFT 오늘의 브리핑 ({today_str}, 06:00 발송)
-    
-    # 1️⃣ (가장 중요한 뉴스 제목 - 핵심만 짧게)
-    (본문 요약 1~2문장)
-    🗨️ *Insight*: (실무자 관점의 한 줄 평가/전망)
-    
-    # 2️⃣ (두 번째 중요한 뉴스 제목)
-    (본문 요약 1~2문장)
-    🗨️ *Insight*: (한 줄 평가)
-    
-    # 3️⃣ (세 번째 중요한 뉴스 제목)
-    (본문 요약 1~2문장)
-    
-    # 4️⃣ (네 번째 중요한 뉴스 제목)
-    (본문 요약 1~2문장)
-    
-    # 5️⃣ (다섯 번째 중요한 뉴스 제목)
-    (본문 요약 1~2문장)
-
-    ---
-    
-    📌 오늘의 한마디
-    (반도체/테크 업계 종사자에게 힘이 되는 격려나 통찰 한 문장)
-    
-    🌟 (마무리 인사 1문장)
-    
-    [데이터]:
-    {news_text}
-    """
-
-# 3. 모델 순환 시도 (핵심 로직)
-    for model_name in available_models:
-        try:
-            print(f"   🔄 시도 중인 모델: {model_name}...")
-            response = client.models.generate_content(model=model_name, contents=prompt)
-            
-            if response.text:
-                print(f"   ✅ 성공! ({model_name} 사용됨)")
-                return response.text
-                
-        except Exception as e:
-            error_msg = str(e)
-            print(f"   ❌ {model_name} 실패: {error_msg[:100]}...") # 에러 로그 짧게 출력
-            
-            # 429 에러(쿼터 초과)일 경우에만 잠시 대기 후 다음 모델로 넘어감
-            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                print("      ⏳ 쿼터 초과! 5초 숨 고르고 다음 모델 투입합니다.")
-                time.sleep(5) 
-                continue # 다음 for문으로 넘어감 (다음 모델 실행)
-            
-            # 그 외 에러도 일단 다음 모델 시도
-            time.sleep(2)
-            continue
-
-    # 4. 모든 모델이 다 실패했을 경우 (최후의 수단)
-    print("   😱 모든 모델 가동 실패.")
-    return f"❄️ 오늘의 브리핑\n\n죄송합니다. 현재 AI 서버 접속량이 많아 요약을 불러오지 못했습니다.\n아래 [리포트 바로가기] 버튼을 눌러 전체 내용을 확인해주세요!"
-    
+  
 def fetch_news():
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
@@ -464,6 +296,179 @@ def generate_content(news_text):
             continue
     
     raise Exception("모든 엔진이 응답하지 않습니다. API 키와 권한을 확인하세요.")
+
+# --- [기능 1] 날씨 정보 ---
+def get_weather_info():
+    try:
+        url = "https://api.open-meteo.com/v1/forecast?latitude=36.99&longitude=127.11&current=temperature_2m,weather_code,pm10&timezone=Asia%2FSeoul"
+        res = requests.get(url).json()
+        current = res.get('current', {})
+        temp = current.get('temperature_2m', 0)
+        code = current.get('weather_code', 0)
+        
+        weather_desc = "맑음"
+        if code in [1, 2, 3]: weather_desc = "구름 조금"
+        elif code in [45, 48]: weather_desc = "안개"
+        elif code in [51, 53, 55, 61, 63, 65]: weather_desc = "비"
+        elif code in [71, 73, 75, 85, 86]: weather_desc = "눈"
+        elif code >= 95: weather_desc = "뇌우"
+        return f"{temp}°C, {weather_desc}"
+    except: return "기온 정보 없음"
+
+# --- [기능 2] 카카오 토큰 자동 갱신 (핵심 기능) ---
+def get_new_kakao_token():
+    url = "https://kauth.kakao.com/oauth/token"
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": KAKAO_REST_API_KEY,
+        "client_secret": KAKAO_CLIENT_SECRET, # 보안 코드가 필수입니다!
+        "refresh_token": KAKAO_REFRESH_TOKEN
+    }
+    
+    try:
+        response = requests.post(url, data=data)
+        tokens = response.json()
+        if "access_token" in tokens:
+            return tokens["access_token"]
+        else:
+            print(f"❌ 토큰 갱신 실패: {tokens}")
+            return None
+    except Exception as e:
+        print(f"❌ 토큰 요청 중 에러: {e}")
+        return None
+
+# --- [기능 3] 카카오톡 전송 ---
+def send_kakao_message(briefing_text, report_url):
+    # 1. 새로운 액세스 토큰 발급 (매일 아침 수행)
+    access_token = get_new_kakao_token()
+    if not access_token:
+        print("⚠️ 토큰 발급 실패로 카톡 전송을 건너뜁니다.")
+        return
+
+    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    
+    # 메시지 1: 알림 및 링크
+    payload1 = {"template_object": json.dumps({
+        "object_type": "text",
+        "text": f"김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!\n자세한 내용은 : {report_url}",
+        "link": {"web_url": report_url, "mobile_web_url": report_url},
+        "button_title": "리포트 바로가기"
+    })}
+
+    # 메시지 2: 요약 브리핑
+    payload2 = {"template_object": json.dumps({
+        "object_type": "text",
+        "text": briefing_text,
+        "link": {"web_url": report_url, "mobile_web_url": report_url}
+    })}
+
+    try:
+        requests.post(url, headers=headers, data=payload1)
+        time.sleep(1)
+        requests.post(url, headers=headers, data=payload2)
+        print("✅ 카카오톡 전송 성공")
+    except Exception as e:
+        print(f"❌ 전송 실패: {e}")
+
+# --- [수정] 카카오톡 브리핑 멘트 생성 (10개 뉴스 전체 브리핑 모드) ---
+def generate_kakao_briefing(news_text, weather_str):
+    print("💬 카카오톡 브리핑 멘트 생성 중... (뉴스 10개 전체 요약 모드)")
+    
+    KST = timezone(timedelta(hours=9))
+    now = datetime.now(KST)
+    today_str = now.strftime("%m-%d")
+    
+    # 1. 사용할 모델 리스트 (앞쪽 모델이 실패하면 뒤쪽 모델이 투입됩니다)
+    available_models = [
+        "gemini-2.0-flash",       # 1순위: 가장 빠르고 가성비 좋음
+        "gemini-2.5-flash",       # 2순위: 최신 플래시 (가상)
+        "gemini-1.5-flash",       # 3순위: 안정적인 구형 플래시
+        "gemini-flash-latest",    # 4순위: 최신 별칭
+        "gemini-2.5-pro",         # 5순위: 고성능 (느릴 수 있음)
+        "gemini-pro-latest"       # 6순위: 최후의 보루
+    ]
+    
+# 프롬프트: 10개 항목 모두 작성하도록 강력 지시
+    prompt = f"""
+    당신은 테크 뉴스 전문 큐레이터입니다. 
+    제공된 [뉴스 데이터]에 있는 **모든 뉴스(최대 10개)**를 빠짐없이 브리핑에 포함하세요.
+    내용이 길어져도 괜찮으니 **절대 중간에 멈추지 말고 끝까지 작성**하세요.
+
+    [입력 정보]
+    - 날씨: {weather_str} (평택 기준)
+    - 날짜: {today_str}
+    
+    [*** 필수 작성 규칙 ***]
+    1. 입력된 뉴스 데이터가 10개라면, 10개 모두 요약해야 합니다.
+    2. 각 뉴스당 '핵심 요약' 1~2문장과 'Insight' 1문장을 작성하세요.
+    3. **가장 마지막에 '오늘의 한마디'와 '마무리 인사'가 없으면 실패로 간주합니다.**
+    
+    [출력 양식]
+    
+    ❄️ (날씨/기온 언급 + 따뜻한 인사 1문장)
+    
+    ---
+    
+    🚀 Semi-TFT 오늘의 브리핑 ({today_str}, 06:00 발송)
+    
+    # 1️⃣ (뉴스 제목)
+    (핵심 요약)
+    🗨️ *Insight*: (한 줄 평)
+    
+    # 2️⃣ (뉴스 제목)
+    ...
+    
+    (이런 식으로 모든 뉴스를 순서대로 작성)
+    
+    # 🔟 (마지막 뉴스 제목 - 데이터 개수에 맞춰 번호 매기기)
+    (핵심 요약)
+    🗨️ *Insight*: (한 줄 평)
+
+    ---
+    
+    📌 오늘의 한마디
+    (반도체/테크 업계 종사자에게 힘이 되는 통찰이나 격려의 명언 1문장)
+    
+    🌟 (활기찬 마무리 인사 1문장)
+    
+    [데이터]:
+    {news_text}
+    """
+
+# 모델 순환 시도
+    for model_name in available_models:
+        try:
+            print(f"   🔄 시도 중인 모델: {model_name}...")
+            # 긴 텍스트 생성을 위해 max_output_tokens를 넉넉하게 설정 (선택 사항이나 기본값도 충분하긴 함)
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            
+            if response.text:
+                # 검증: 내용이 너무 짧거나(뉴스 3개 미만), 하단 인사가 없으면 재시도
+                if "오늘의 한마디" not in response.text:
+                    print("   ⚠️ 답변이 잘렸습니다(하단 누락). 더 강력한 모델로 재시도합니다...")
+                    continue
+                    
+                print(f"   ✅ 성공! ({model_name} 사용됨 / 길이: {len(response.text)}자)")
+                return response.text
+                
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ {model_name} 실패: {error_msg[:100]}...")
+            
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                print("      ⏳ 쿼터 초과! 5초 대기...")
+                time.sleep(5)
+                continue
+            
+            time.sleep(2)
+            continue
+
+    print("   😱 모든 모델 가동 실패.")
+    return f"❄️ 오늘의 브리핑\n\n죄송합니다. 내용이 너무 길어 AI가 요약을 완료하지 못했습니다.\n아래 리포트 링크를 통해 전체 내용을 확인해주세요!"
 
 def generate_audio(script):
     try:
