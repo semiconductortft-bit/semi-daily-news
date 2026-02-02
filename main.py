@@ -315,7 +315,7 @@ def get_weather_info():
         return f"{temp}°C, {weather_desc}"
     except: return "기온 정보 없음"
 
-# --- [기능 2] 카카오 토큰 자동 갱신 (핵심 기능) ---
+# --- [기능 2] 카카오 토큰 자동 갱신 (원래 코드 그대로 유지) ---
 def get_new_kakao_token():
     url = "https://kauth.kakao.com/oauth/token"
     data = {
@@ -337,30 +337,46 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-        "Authorization": f"Bearer {access_token}",
-    
-    # 메시지 1: 알림 및 링크
-    payload1 = {"template_object": json.dumps({
-        "object_type": "text",
-        "text": f"김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!\n자세한 내용은 : {report_url}",
-        "link": {"web_url": report_url, "mobile_web_url": report_url},
-        "button_title": "리포트 바로가기"
-    })}
+# --- [기능 3] 카카오톡 전송 (수정: 문법 오류 해결 및 전체보기 적용) ---
+def send_kakao_message(briefing_text, report_url):
+    # 1. 토큰 발급
+    access_token = get_new_kakao_token()
+    if not access_token:
+        print("⚠️ 토큰 발급 실패로 전송을 건너뜁니다.")
+        return
 
-    # 메시지 2: 요약 브리핑
-    payload2 = {"template_object": json.dumps({
+    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    
+    # 2. 헤더 설정 (이 부분이 딕셔너리 형태여야 에러가 안 납니다!)
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    # 3. 텍스트 길이 처리 (카톡 API 한계인 1000자에 맞춰 안전하게 자름)
+    # 내용이 길면 앱에서 자동으로 [전체보기]가 생성됩니다.
+    MAX_LENGTH = 950
+    if len(briefing_text) > MAX_LENGTH:
+        final_text = briefing_text[:MAX_LENGTH] + "\n\n...(내용이 더 있습니다. 아래 버튼을 눌러 확인하세요)"
+    else:
+        final_text = briefing_text
+
+    # 4. 메시지 통합 전송 (기존 payload1, payload2를 하나로 합침)
+    payload = {"template_object": json.dumps({
         "object_type": "text",
-        "text": briefing_text,
-        "link": {"web_url": report_url, "mobile_web_url": report_url}
+        "text": final_text,
+        "link": {"web_url": report_url, "mobile_web_url": report_url},
+        "button_title": "리포트 전체 보기" # 채팅방 하단에 버튼 생성
     })}
 
     try:
-        requests.post(url, headers=headers, data=payload1)
-        time.sleep(1)
-        requests.post(url, headers=headers, data=payload2)
-        print("✅ 카카오톡 전송 성공")
+        response = requests.post(url, headers=headers, data=payload)
+        if response.status_code == 200:
+            print("✅ 카카오톡 전송 성공")
+        else:
+            print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
-        print(f"❌ 전송 실패: {e}")
+        print(f"❌ 전송 중 에러: {e}")
 
 # --- [수정] 카카오톡 브리핑 멘트 생성 (10개 뉴스 전체 브리핑 모드) ---
 def generate_kakao_briefing(news_text, weather_str):
