@@ -18,6 +18,10 @@ from email.mime.multipart import MIMEMultipart
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 VOICE_ID = "cjVigY5qzO86Huf0OWal"
+# [카카오 관련 키]
+KAKAO_REFRESH_TOKEN = os.getenv("KAKAO_REFRESH_TOKEN")
+KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
+KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET") # 보안 코드 추가
 
 # 클라이언트 초기화
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -64,6 +68,83 @@ KOREA_TARGETS = {
     "zdnet.co.kr": "ZDNet Korea",
     "hankyung.com": "Hankyung Insight"
 }
+
+# --- [기능 1] 날씨 정보 ---
+def get_weather_info():
+    try:
+        url = "https://api.open-meteo.com/v1/forecast?latitude=36.99&longitude=127.11&current=temperature_2m,weather_code,pm10&timezone=Asia%2FSeoul"
+        res = requests.get(url).json()
+        current = res.get('current', {})
+        temp = current.get('temperature_2m', 0)
+        code = current.get('weather_code', 0)
+        
+        weather_desc = "맑음"
+        if code in [1, 2, 3]: weather_desc = "구름 조금"
+        elif code in [45, 48]: weather_desc = "안개"
+        elif code in [51, 53, 55, 61, 63, 65]: weather_desc = "비"
+        elif code in [71, 73, 75, 85, 86]: weather_desc = "눈"
+        elif code >= 95: weather_desc = "뇌우"
+        return f"{temp}°C, {weather_desc}"
+    except: return "기온 정보 없음"
+
+# --- [기능 2] 카카오 토큰 자동 갱신 (핵심 기능) ---
+def get_new_kakao_token():
+    url = "https://kauth.kakao.com/oauth/token"
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": KAKAO_REST_API_KEY,
+        "client_secret": KAKAO_CLIENT_SECRET, # 보안 코드가 필수입니다!
+        "refresh_token": KAKAO_REFRESH_TOKEN
+    }
+    
+    try:
+        response = requests.post(url, data=data)
+        tokens = response.json()
+        if "access_token" in tokens:
+            return tokens["access_token"]
+        else:
+            print(f"❌ 토큰 갱신 실패: {tokens}")
+            return None
+    except Exception as e:
+        print(f"❌ 토큰 요청 중 에러: {e}")
+        return None
+
+# --- [기능 3] 카카오톡 전송 ---
+def send_kakao_message(briefing_text, report_url):
+    # 1. 새로운 액세스 토큰 발급 (매일 아침 수행)
+    access_token = get_new_kakao_token()
+    if not access_token:
+        print("⚠️ 토큰 발급 실패로 카톡 전송을 건너뜁니다.")
+        return
+
+    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    
+    # 메시지 1: 알림 및 링크
+    payload1 = {"template_object": json.dumps({
+        "object_type": "text",
+        "text": f"[CHOI] [오전 7:00] 오늘의 뉴스레터가 도착했습니다!\n자세한 내용은 : {report_url}",
+        "link": {"web_url": report_url, "mobile_web_url": report_url},
+        "button_title": "리포트 바로가기"
+    })}
+
+    # 메시지 2: 요약 브리핑
+    payload2 = {"template_object": json.dumps({
+        "object_type": "text",
+        "text": briefing_text,
+        "link": {"web_url": report_url, "mobile_web_url": report_url}
+    })}
+
+    try:
+        requests.post(url, headers=headers, data=payload1)
+        time.sleep(1)
+        requests.post(url, headers=headers, data=payload2)
+        print("✅ 카카오톡 전송 성공")
+    except Exception as e:
+        print(f"❌ 전송 실패: {e}")
 
 def fetch_news():
     KST = timezone(timedelta(hours=9))
