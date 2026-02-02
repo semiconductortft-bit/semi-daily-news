@@ -239,6 +239,14 @@ def generate_kakao_briefing(news_text, weather_str):
         ---
         📌 (마무리 인사)
 
+    # 리포트 작성은 가장 성능 좋은 모델 시도
+    models = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+        "gemini-pro-latest"
+
         [데이터]:
         {news_text}
         """
