@@ -337,7 +337,7 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [수정] 텍스트와 버튼을 한 번에 보내는 함수 (링크 누락 해결) ---
+# --- [최종 수정] 텍스트 + '전체보기 버튼' 확실하게 보내는 함수 ---
 def send_kakao_message(briefing_text, report_url):
     # 1. 토큰 발급
     access_token = get_new_kakao_token()
@@ -347,22 +347,23 @@ def send_kakao_message(briefing_text, report_url):
 
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     
-    # 2. 헤더 설정 (이 부분이 없으면 에러납니다!)
+    # 2. 헤더 설정
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 3. 텍스트 길이 안전 자르기 (카톡 API 제한: 1000자)
-    # 950자까지만 넣고, 나머지는 잘라야 '전송 실패'가 안 뜹니다.
-    MAX_LENGTH = 950
+    # 3. 텍스트 길이 제한 처리 (카카오 API 한계: 1000자)
+    # 1000자가 넘으면 전송이 실패하므로 900자에서 안전하게 자릅니다.
+    MAX_LENGTH = 900
+    
     if len(briefing_text) > MAX_LENGTH:
-        # 내용이 길면 뒤에 ... 붙임
-        final_text = briefing_text[:MAX_LENGTH] + "\n\n...(내용이 더 있습니다. 아래 버튼을 눌러 확인하세요)"
+        # 텍스트가 길면 자르고 안내 문구 추가
+        final_text = briefing_text[:MAX_LENGTH] + "\n\n...(다음 내용은 아래 버튼을 눌러 확인하세요)"
     else:
         final_text = briefing_text
 
-    # 4. [핵심] 텍스트 + 버튼을 하나의 JSON으로 합침
+    # 4. [핵심] 버튼을 명시적으로 리스트로 만들어서 넣습니다. (가장 확실한 방법)
     template = {
         "object_type": "text",
         "text": final_text,
@@ -370,10 +371,22 @@ def send_kakao_message(briefing_text, report_url):
             "web_url": report_url,
             "mobile_web_url": report_url
         },
-        "button_title": "리포트 전체 보기"  # 👈 이 부분이 있어야 버튼이 나옵니다!
+        # 👇 이 부분이 버튼을 강제로 만듭니다.
+        "buttons": [
+            {
+                "title": "리포트 전체 보기 🔗",
+                "link": {
+                    "web_url": report_url,
+                    "mobile_web_url": report_url
+                }
+            }
+        ]
     }
 
-    payload = {"template_object": json.dumps(template)}
+    # 5. 데이터 포장 및 전송
+    payload = {
+        "template_object": json.dumps(template)
+    }
 
     try:
         response = requests.post(url, headers=headers, data=payload)
