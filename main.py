@@ -337,7 +337,7 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [최종 완성] 인사말 + 본문 + 텍스트링크 + 버튼까지 완벽한 전송 함수 ---
+# --- [디자인 수정] URL 주소 숨기고 '말풍선 클릭'으로 이동하게 변경 ---
 def send_kakao_message(briefing_text, report_url):
     # 1. 토큰 발급
     access_token = get_new_kakao_token()
@@ -351,27 +351,27 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 2. [고정 문구 설정] 머리말과 꼬리말 정의
+    # 2. [고정 문구 설정]
     header = "안녕하세요. 김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!"
-    footer = f"자세한 내용은 : {report_url}"
-
-    # 3. 길이 계산 및 본문 자르기
-    # 카카오톡 전체 한계(1000자) - 헤더/푸터 길이 - 여유분(50자) = 본문 허용 길이
-    # 헤더+푸터가 약 150자 정도 되므로, 본문은 800자 정도가 안전합니다.
-    safe_limit = 800
     
+    # [수정] URL 주소를 텍스트에서 제거하고, 클릭 유도 멘트로 변경
+    footer = "👇 자세한 내용은 이 말풍선을 누르거나 아래 버튼을 클릭하세요!"
+
+    # 3. 길이 계산 (안전하게 800자)
+    safe_limit = 800
     if len(briefing_text) > safe_limit:
         body_content = briefing_text[:safe_limit] + "\n...(중략)"
     else:
         body_content = briefing_text
 
-    # 4. 최종 메시지 조립 (순서: 인사말 -> 본문 -> 텍스트 링크)
+    # 4. 최종 텍스트 조립 (URL 주소 없음)
     final_text = f"{header}\n\n{body_content}\n\n{footer}"
 
-    # 5. 전송 (텍스트 링크 + 하단 버튼까지 모두 포함)
+    # 5. 전송 템플릿 설정
     template = {
         "object_type": "text",
         "text": final_text,
+        # 🚨 [핵심] 'link' 속성을 설정하면 말풍선 전체가 클릭 가능한 링크가 됩니다.
         "link": {
             "web_url": report_url,
             "mobile_web_url": report_url
@@ -384,7 +384,7 @@ def send_kakao_message(briefing_text, report_url):
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            print("✅ 카카오톡 전송 성공 (인사말+링크 포함)")
+            print("✅ 카카오톡 전송 성공 (URL 숨김 모드)")
         else:
             print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
