@@ -185,7 +185,8 @@ def generate_content(news_text):
 
    (줄바꿈)
     ⓒ 2026 {publisher}. All rights reserved.🚫무단 전재, 복사, 외부 배포 엄금
-    
+   
+   (줄바꿈, 실선)
     |라디오 스크립트|
     안녕하세요, 반도체재료개발TFT 김동휘입니다. {today_date}, 오늘 아침 확인해야 할 주요 소식입니다.
     (뉴스 핵심 요약 40초 분량, 하십시오체)
@@ -251,7 +252,7 @@ def generate_kakao_briefing(news_text, weather_str):
     {news_text}
     """
 
-    # 2. AI 시도 (모델 리스트를 돌면서 성공할 때까지 시도)
+# 2. AI 시도 (모델 리스트를 돌면서 성공할 때까지 시도)
     for model_name in models:
         try:
             print(f"   🔄 시도 중: {model_name}...")
@@ -275,28 +276,14 @@ def generate_kakao_briefing(news_text, weather_str):
     
     fallback_msg = f"""❄️ {weather_str}, 기분 좋은 아침입니다!
 
----
+    ---
 
-🚀 오늘의 브리핑 ({today_str})
+    🚀 오늘의 브리핑 ({today_str})
 
-💡 **Executive Summary**
-(AI 서비스 지연으로 헤드라인 위주로 전해드립니다. 자세한 내용은 리포트를 확인해주세요.)
+    💡 **Executive Summary**
+    (AI 서비스 지연으로 헤드라인 위주로 전해드립니다. 자세한 내용은 리포트를 확인해주세요.)
 
-📰 **Headlines**"""
-
-    for i, t in enumerate(titles[:10]):
-        fallback_msg += f"\n{i+1}. {t}"
-
-    fallback_msg += f"\n\n---\n\n📌 오늘도 즐거운 하루 보내세요!"
-    return fallback_msg
----
-
-🚀 오늘의 브리핑 ({today_str})
-
-💡 **Executive Summary**
-(AI 서비스 지연으로 헤드라인 위주로 전해드립니다. 자세한 내용은 리포트를 확인해주세요.)
-
-📰 **Headlines**"""
+    📰 **Headlines**"""
 
     for i, t in enumerate(titles[:10]):
         fallback_msg += f"\n{i+1}. {t}"
