@@ -600,7 +600,7 @@ if __name__ == "__main__":
 
         if isinstance(raw_data, list):
             formatted_news = []
-            for i, e in enumerate(raw_data[:12]): # 12개 넉넉히
+            for i, e in enumerate(raw_data[:12]): 
                 clean_summ = e.summary.replace("<b>", "").replace("</b>", "") if hasattr(e, 'summary') else ""
                 item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\nSummary: {clean_summ[:300]}\n"
                 formatted_news.append(item)
@@ -624,21 +624,20 @@ if __name__ == "__main__":
         web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
 
         # -------------------------------------------------------
-        # [핵심] API 쿼터 확보를 위한 강제 휴식 (에러 방지용)
+        # [휴식] 429 에러 방지
         # -------------------------------------------------------
-        print("\n☕ AI 휴식 중... (API 에러 방지를 위해 60초 대기)")
+        print("\n☕ AI 휴식 중... (60초 대기)")
         time.sleep(60) 
-        # -------------------------------------------------------
-
+        
         # 5. 카카오톡 발송
         print("\n💬 카카오톡 발송 프로세스 시작...")
         weather_info = get_weather_info()
         print(f"☀️ 현재 날씨: {weather_info}")
         
-        # [수정 완료] [:2500] 제거 -> 전체 뉴스 전달!
-        # 이제 AI가 10개 뉴스를 모두 읽고 길게 요약할 수 있습니다.
+        # 🚨 [여기가 핵심 수정] [:2500]을 제거했습니다! 이제 10개를 다 읽습니다.
         kakao_briefing = generate_kakao_briefing(news_text, weather_info)
         
+        # 🚨 [분할 전송] 내용이 길어도 알아서 [1/3]로 쪼개 보냅니다.
         send_kakao_message(kakao_briefing, web_url)
 
         # 6. 이메일 발송
