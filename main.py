@@ -337,7 +337,7 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [기능 3] 카카오톡 전송 (수정: 문법 오류 해결 및 전체보기 적용) ---
+# --- [수정] 텍스트와 버튼을 한 번에 보내는 함수 (링크 누락 해결) ---
 def send_kakao_message(briefing_text, report_url):
     # 1. 토큰 발급
     access_token = get_new_kakao_token()
@@ -347,32 +347,38 @@ def send_kakao_message(briefing_text, report_url):
 
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     
-    # 2. 헤더 설정 (이 부분이 딕셔너리 형태여야 에러가 안 납니다!)
+    # 2. 헤더 설정 (이 부분이 없으면 에러납니다!)
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 3. 텍스트 길이 처리 (카톡 API 한계인 1000자에 맞춰 안전하게 자름)
-    # 내용이 길면 앱에서 자동으로 [전체보기]가 생성됩니다.
+    # 3. 텍스트 길이 안전 자르기 (카톡 API 제한: 1000자)
+    # 950자까지만 넣고, 나머지는 잘라야 '전송 실패'가 안 뜹니다.
     MAX_LENGTH = 950
     if len(briefing_text) > MAX_LENGTH:
+        # 내용이 길면 뒤에 ... 붙임
         final_text = briefing_text[:MAX_LENGTH] + "\n\n...(내용이 더 있습니다. 아래 버튼을 눌러 확인하세요)"
     else:
         final_text = briefing_text
 
-    # 4. 메시지 통합 전송 (기존 payload1, payload2를 하나로 합침)
-    payload = {"template_object": json.dumps({
+    # 4. [핵심] 텍스트 + 버튼을 하나의 JSON으로 합침
+    template = {
         "object_type": "text",
         "text": final_text,
-        "link": {"web_url": report_url, "mobile_web_url": report_url},
-        "button_title": "리포트 전체 보기" # 채팅방 하단에 버튼 생성
-    })}
+        "link": {
+            "web_url": report_url,
+            "mobile_web_url": report_url
+        },
+        "button_title": "리포트 전체 보기"  # 👈 이 부분이 있어야 버튼이 나옵니다!
+    }
+
+    payload = {"template_object": json.dumps(template)}
 
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            print("✅ 카카오톡 전송 성공")
+            print("✅ 카카오톡 전송 성공 (버튼 포함)")
         else:
             print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
