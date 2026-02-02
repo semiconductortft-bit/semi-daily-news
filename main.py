@@ -146,6 +146,44 @@ def send_kakao_message(briefing_text, report_url):
     except Exception as e:
         print(f"❌ 전송 실패: {e}")
 
+# --- [추가] 카카오톡 브리핑 멘트 생성 (이게 없으면 요약을 못합니다!) ---
+def generate_kakao_briefing(news_text, weather_str):
+    print("💬 카카오톡 브리핑 멘트 생성 중...")
+    KST = timezone(timedelta(hours=9))
+    today_str = datetime.now(KST).strftime("%m-%d")
+    
+    prompt = f"""
+    당신은 센스 있는 뉴스 큐레이터입니다. 아래 뉴스 데이터를 바탕으로 '카카오톡 공유용 브리핑' 메시지를 작성해줘.
+    
+    [현재 날씨]: {weather_str} (평택 기준)
+    [오늘의 날짜]: {today_str}
+    
+    [작성 포맷]
+    (날씨 코멘트): "❄️ 오늘은 {weather_str}.. (날씨에 맞는 따뜻한 인사말 1문장)"
+    ---
+    🚀 Semi-TFT 오늘의 브리핑 ({today_str}, 07:00 발송)
+    
+    # 1️⃣ [가장 중요한 뉴스 키워드/제목]
+    [핵심 내용 2줄 요약]
+    🗨️ *Insight*: [실무자 관점의 짧은 한줄 평]
+
+    # 2️⃣ [두 번째 중요한 뉴스 키워드/제목]
+    [핵심 내용 2줄 요약]
+    
+    # 3️⃣ [세 번째 중요한 뉴스 키워드/제목]
+    [핵심 내용 2줄 요약]
+    
+    [데이터]:
+    {news_text}
+    """
+    
+    try:
+        # 모델은 2.0-flash가 빠르고 좋습니다
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        return response.text
+    except Exception as e:
+        return f"브리핑 생성 실패: {e}"
+
 def fetch_news():
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
@@ -460,76 +498,76 @@ def send_email(subject, body, to_email):
     except Exception as e:
         print(f"❌ 이메일 발송 실패: {e}")
 
+# --- 메인 실행 ---
 if __name__ == "__main__":
-    # 이 부분을 추가하여 프로그램 전체에서 사용할 한국 날짜를 고정합니다.
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     date_str = now_kst.strftime("%Y-%m-%d")
-    print("🚀 반도체 리포트 생산 공정 개시\n")
+    
+    print("🚀 반도체 리포트 생산 공정 개시")
+    print(f"📅 기준 날짜: {date_str}")
+
     try:
+        # 1. 뉴스 수집
         raw_data = fetch_news()
         
-        # 일요일이거나 데이터가 없는 경우 종료
+        # 데이터가 없거나 일요일이면 종료
         if raw_data is None:
-            print("🛑 발행 조건 미충족(일요일 등)으로 공정을 종료합니다.")
-            exit(0) 
+            print("🛑 발행 조건 미충족으로 종료합니다.")
+            exit(0)
 
-        # 월요일 주간 뉴스 대응을 위한 데이터 포맷팅
+        # 뉴스 데이터 정리
         if isinstance(raw_data, list):
-            # 뉴스 개수가 10개보다 많을 수 있으므로 최종 선별된 리스트 처리
             formatted_news = []
-            for i, e in enumerate(raw_data[:10]): # 최대 10개 제한
+            for i, e in enumerate(raw_data[:10]):
                 clean_summ = e.summary.replace("<b>", "").replace("</b>", "") if hasattr(e, 'summary') else ""
-                item = (
-                    f"[{i+1}] Source: {e['display_source']}\n"
-                    f"Date: {e['parsed_date'].strftime('%Y-%m-%d %H:%M')}\n"
-                    f"Title: {e.title}\n"
-                    f"URL: {e.link}\n"
-                    f"Summary: {clean_summ[:300]}\n"
-                )
+                item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\nSummary: {clean_summ[:300]}\n"
                 formatted_news.append(item)
             news_text = "\n".join(formatted_news)
         else:
             news_text = raw_data
 
-        # AI 컨텐츠 생성 및 이후 공정 진행
+        # 2. 본문 생성 (Gemini)
         full_text = generate_content(news_text)
-        
-        print(f"✅ {len(full_text)} 바이트의 컨텐츠 생성 완료")
-        
-        # 라디오 스크립트 추출
+        print(f"✅ 콘텐츠 생성 완료")
+
+        # 3. 라디오 생성 (ElevenLabs)
         if "라디오 스크립트" in full_text:
             script = full_text.split("라디오 스크립트")[-1].strip()
-            print(f"✅ 라디오 스크립트 추출 완료 ({len(script)} 문자)")
         else:
             script = full_text[:500]
-            print(f"⚠️ '라디오 스크립트' 섹션을 찾지 못해 처음 500자 사용")
-        
-        print("\n🎙️ AI 라디오 음성 합성 중...")
         generate_audio(script)
-        
-        print("\n📝 뉴스레터 마크다운 생성 중...")
-        save_newsletter(full_text)
 
-        # --- [추가] 이메일 발송 단계 ---
+        # 4. 파일 저장 (Github Pages용)
+        save_newsletter(full_text)
+        
+        # URL 생성 (카톡 전송용)
+        # 주의: 실제 배포된 주소여야 접속이 됩니다. 로컬 테스트시 링크는 404가 뜰 수 있지만 전송은 됩니다.
+        web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
+
+        # -------------------------------------------------------
+        # [핵심] 카카오톡 전송 단계 (여기가 빠져 있었습니다!)
+        # -------------------------------------------------------
+        print("\n💬 카카오톡 발송 프로세스 시작...")
+        
+        # A. 날씨 가져오기
+        weather_info = get_weather_info()
+        print(f"☀️ 현재 날씨: {weather_info}")
+        
+        # B. 브리핑 멘트 생성 (뉴스 앞부분 2000자만 사용)
+        kakao_briefing = generate_kakao_briefing(news_text[:2000], weather_info)
+        
+        # C. 메시지 전송 (나에게 보내기)
+        send_kakao_message(kakao_briefing, web_url)
+        # -------------------------------------------------------
+
+        # 6. 이메일 발송
         print("\n📧 이메일 발송 준비 중...")
-        
-        # 1. 메일 제목 설정 (날짜 포함)
-        KST = timezone(timedelta(hours=9))
-        today_str = datetime.now(KST).strftime("%Y-%m-%d")
-        mail_subject = f"📦 [반도체 데일리 뉴스] {today_str} 리포트"
-        
-        # 2. 메일 본문 가독성 처리 (마크다운의 줄바꿈을 HTML의 <br>로 변환)
-        # full_text는 AI가 생성한 전체 내용입니다.
+        mail_subject = f"📦 [반도체 데일리 뉴스] {date_str} 리포트"
         email_body = full_text.replace("\n", "<br>")
-        
-        # 3. 실제 발송 대상 설정 및 함수 실행
-        target_email = "keenhwi@gmail.com"
-        send_email(mail_subject, email_body, target_email)
+        send_email(mail_subject, email_body, "keenhwi@gmail.com")
         
         print("\n✅✅✅ 모든 공정이 성공적으로 완료되었습니다! ✅✅✅")
         
     except Exception as error:
-        print(f"\n⚠️ 시스템 경보: {error}")
-        raise error
-
+        print(f"\n⚠️ 시스템 에러 발생: {error}")
