@@ -49,8 +49,9 @@ def parse_date(date_str):
 # 2. 키워드 및 타겟 매체 설정 (확장 버전)
 KEYWORDS = [
     'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
-    'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 
-    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics'
+    'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
+    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics,
+    'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
 ]
 
 GLOBAL_TARGETS = {
@@ -62,6 +63,11 @@ GLOBAL_TARGETS = {
     "semiconductor-digest.com": "Semi Digest",
     "yolegroup.com": "Yole Group",
     "kipost.net": "KIPOST"
+    "wccftech.com": "Wccftech",           # 하드웨어/반도체 뉴스 강자
+    "techpowerup.com": "TechPowerUp",     # GPU/CPU 상세 기술 뉴스
+    "eenewsembedded.com": "eeNews Embedded", # 임베디드/유럽권 뉴스
+    "prnewswire.com": "PR Newswire",      # 보도자료 (APAC 포함)
+    "asia.nikkei.com": "Nikkei Asia"      # 일본/아시아 시장 분석
 }
 
 KOREA_TARGETS = {
@@ -128,7 +134,7 @@ def send_kakao_message(briefing_text, report_url):
     # 메시지 1: 알림 및 링크
     payload1 = {"template_object": json.dumps({
         "object_type": "text",
-        "text": f"[CHOI] [오전 7:00] 오늘의 뉴스레터가 도착했습니다!\n자세한 내용은 : {report_url}",
+        "text": f"김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!\n자세한 내용은 : {report_url}",
         "link": {"web_url": report_url, "mobile_web_url": report_url},
         "button_title": "리포트 바로가기"
     })}
@@ -148,32 +154,54 @@ def send_kakao_message(briefing_text, report_url):
     except Exception as e:
         print(f"❌ 전송 실패: {e}")
 
-# --- [추가] 카카오톡 브리핑 멘트 생성 (이게 없으면 요약을 못합니다!) ---
+# --- [수정] 카카오톡 브리핑 멘트 생성 (스타일 대폭 개선) ---
 def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 멘트 생성 중...")
+    print("💬 카카오톡 브리핑 멘트 생성 중... (감성 & 인사이트 모드)")
     KST = timezone(timedelta(hours=9))
-    today_str = datetime.now(KST).strftime("%m-%d")
+    now = datetime.now(KST)
+    today_str = now.strftime("%m-%d")
+    time_str = now.strftime("%H:%M")
     
+    # 예시 스타일을 프롬프트에 직접 입력해서 학습시킵니다.
     prompt = f"""
-    당신은 센스 있는 뉴스 큐레이터입니다. 아래 뉴스 데이터를 바탕으로 '카카오톡 공유용 브리핑' 메시지를 작성해줘.
+    당신은 테크 뉴스 전문 큐레이터입니다. 
+    아래 [뉴스 데이터]를 바탕으로, 카카오톡으로 발송할 '핵심 요약 브리핑'을 작성해주세요.
     
-    [현재 날씨]: {weather_str} (평택 기준)
-    [오늘의 날짜]: {today_str}
+    [입력 정보]
+    - 날씨: {weather_str} (평택 기준)
+    - 날짜: {today_str}
     
-    [작성 포맷]
-    (날씨 코멘트): "❄️ 오늘은 {weather_str}.. (날씨에 맞는 따뜻한 인사말 1문장)"
+    [필수 작성 양식 - 이대로만 출력하세요]
+    
+    ❄️ (날씨와 기온을 언급하며, 따뜻한 안부 인사 1문장. 예: 오늘은 -5°C에 흐린 날씨, 따뜻하게 입으세요!)
+    
     ---
-    🚀 Semi-TFT 오늘의 브리핑 ({today_str}, 07:00 발송)
     
-    # 1️⃣ [가장 중요한 뉴스 키워드/제목]
-    [핵심 내용 2줄 요약]
-    🗨️ *Insight*: [실무자 관점의 짧은 한줄 평]
+    🚀 Semi-TFT 오늘의 브리핑 ({today_str}, 06:00 발송)
+    
+    # 1️⃣ (가장 중요한 뉴스 제목 - 핵심만 짧게)
+    (본문 요약 1~2문장)
+    🗨️ *Insight*: (실무자 관점의 한 줄 평가/전망)
+    
+    # 2️⃣ (두 번째 중요한 뉴스 제목)
+    (본문 요약 1~2문장)
+    🗨️ *Insight*: (한 줄 평가)
+    
+    # 3️⃣ (세 번째 중요한 뉴스 제목)
+    (본문 요약 1~2문장)
+    
+    # 4️⃣ (네 번째 중요한 뉴스 제목)
+    (본문 요약 1~2문장)
+    
+    # 5️⃣ (다섯 번째 중요한 뉴스 제목)
+    (본문 요약 1~2문장)
 
-    # 2️⃣ [두 번째 중요한 뉴스 키워드/제목]
-    [핵심 내용 2줄 요약]
+    ---
     
-    # 3️⃣ [세 번째 중요한 뉴스 키워드/제목]
-    [핵심 내용 2줄 요약]
+    📌 오늘의 한마디
+    (반도체/테크 업계 종사자에게 힘이 되는 격려나 통찰 한 문장)
+    
+    🌟 (마무리 인사 1문장)
     
     [데이터]:
     {news_text}
