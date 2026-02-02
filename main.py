@@ -62,7 +62,7 @@ GLOBAL_TARGETS = {
     "trendforce.com": "TrendForce",
     "semiconductor-digest.com": "Semi Digest",
     "yolegroup.com": "Yole Group",
-    "kipost.net": "KIPOST"
+    "kipost.net": "KIPOST",
     "wccftech.com": "Wccftech",           # 하드웨어/반도체 뉴스 강자
     "techpowerup.com": "TechPowerUp",     # GPU/CPU 상세 기술 뉴스
     "eenewsembedded.com": "eeNews Embedded", # 임베디드/유럽권 뉴스
