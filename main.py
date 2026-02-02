@@ -337,7 +337,7 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [디자인 수정] URL 주소 숨기고 '말풍선 클릭'으로 이동하게 변경 ---
+# --- [최종 해결] 버튼 강제 삽입 & 말풍선 클릭 확실하게 적용 ---
 def send_kakao_message(briefing_text, report_url):
     # 1. 토큰 발급
     access_token = get_new_kakao_token()
@@ -351,32 +351,39 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 2. [고정 문구 설정]
+    # 2. 고정 문구
     header = "안녕하세요. 김동휘입니다. 뉴스레터와 함께 좋은 하루 보내세요!"
-    
-    # [수정] URL 주소를 텍스트에서 제거하고, 클릭 유도 멘트로 변경
-    footer = "👇 자세한 내용은 이 말풍선을 누르거나 아래 버튼을 클릭하세요!"
+    footer = "👇 자세한 내용은 아래 버튼을 눌러 확인하세요!" # 멘트 수정
 
-    # 3. 길이 계산 (안전하게 800자)
-    safe_limit = 800
+    # 3. 본문 길이 안전하게 자르기 (900자)
+    safe_limit = 900
     if len(briefing_text) > safe_limit:
         body_content = briefing_text[:safe_limit] + "\n...(중략)"
     else:
         body_content = briefing_text
 
-    # 4. 최종 텍스트 조립 (URL 주소 없음)
+    # 4. 텍스트 조립 (URL 제거)
     final_text = f"{header}\n\n{body_content}\n\n{footer}"
 
-    # 5. 전송 템플릿 설정
+    # 5. [핵심] 템플릿에 'buttons' 리스트를 직접 넣습니다. (무조건 나옵니다)
     template = {
         "object_type": "text",
         "text": final_text,
-        # 🚨 [핵심] 'link' 속성을 설정하면 말풍선 전체가 클릭 가능한 링크가 됩니다.
+        # 말풍선 자체 클릭 시 이동 (보조 수단)
         "link": {
             "web_url": report_url,
             "mobile_web_url": report_url
         },
-        "button_title": "리포트 전체 보기"
+        # 👇 [여기가 중요] 버튼을 강제로 생성하는 코드
+        "buttons": [
+            {
+                "title": "리포트 전체 보기 🔗",
+                "link": {
+                    "web_url": report_url,
+                    "mobile_web_url": report_url
+                }
+            }
+        ]
     }
 
     payload = {"template_object": json.dumps(template)}
@@ -384,7 +391,7 @@ def send_kakao_message(briefing_text, report_url):
     try:
         response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            print("✅ 카카오톡 전송 성공 (URL 숨김 모드)")
+            print("✅ 카카오톡 전송 성공 (버튼 강제 포함)")
         else:
             print(f"❌ 전송 실패: {response.text}")
     except Exception as e:
