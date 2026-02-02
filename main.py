@@ -314,6 +314,7 @@ def send_kakao_message(briefing_text, report_url):
     }
 
     # 2. [고정 문구 설정] 머리말과 꼬리말 정의
+    header = "안녕하세요. 김동휘입니다."
     footer = f"자세한 내용은 : {report_url}"
 
     # 본문 길이 자르기 (900자)
