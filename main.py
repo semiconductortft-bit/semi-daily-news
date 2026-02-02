@@ -241,7 +241,8 @@ def generate_content(news_text):
     - **[용어명 (한글/영어)]**
     (줄바꿈)
     - Technical Term: 'BSPDN', 'Glass Substrate', 'Hybrid Bonding' 등 상기 10개의 기사 중 반도체 전문가 수준의 심도 있는 기술 용어 1개를 선정해 상세히 설명하세요.
-    #####
+  
+    (줄바꿈)
     **5. Footer (저작권 및 보안 경고)**
     - 리포트 맨 마지막에 반드시 다음 문구를 볼드체로 포함하세요:
     `ⓒ 2026 {publisher}. All rights reserved.🚫무단 전재, 복사, 외부 배포 엄금`
