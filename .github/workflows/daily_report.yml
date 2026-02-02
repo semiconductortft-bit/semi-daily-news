@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted    # ⭕ "내 컴퓨터에서 실행해!"라는 뜻입니다.
     permissions:
       contents: write    # 🔐 파일 쓰기 권한 (필수)
 
