@@ -403,7 +403,7 @@ def generate_kakao_briefing(news_text, weather_str):
     
     [*** 필수 작성 규칙 ***]
     1. 입력된 뉴스 데이터가 10개라면, 10개 모두 요약해야 합니다.
-    2. 각 뉴스당 '핵심 요약' 1~2문장과 'Insight' 1문장을 작성하세요.
+    2. 각 뉴스당 '핵심 요약' 1문장과 'Insight' 1문장을 작성하세요.
     3. **가장 마지막에 '오늘의 한마디'와 '마무리 인사'가 없으면 실패로 간주합니다.**
     
     [출력 양식]
@@ -437,7 +437,12 @@ def generate_kakao_briefing(news_text, weather_str):
     [데이터]:
     {news_text}
     """
-
+    # [핵심] 답변 길이를 최대로 늘리는 설정
+    generation_config = {
+        "max_output_tokens": 8192,  # 👈 기존보다 4배 늘림 (중간 끊김 방지)
+        "temperature": 0.7,
+    }
+    
 # 모델 순환 시도
     for model_name in available_models:
         try:
