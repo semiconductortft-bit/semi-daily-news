@@ -1,5 +1,7 @@
 import os
 import time
+import requests  # 👈 [중요] 이 줄이 빠져 있었습니다! 꼭 넣어주세요.
+import json      # 👈 json도 필요할 수 있으니 확인해주세요.
 import feedparser
 import urllib.parse
 import base64
