@@ -554,15 +554,13 @@ if __name__ == "__main__":
         # 1. 뉴스 수집
         raw_data = fetch_news()
         
-        # 데이터가 없거나 일요일이면 종료
         if raw_data is None:
             print("🛑 발행 조건 미충족으로 종료합니다.")
             exit(0)
 
-        # 뉴스 데이터 정리
         if isinstance(raw_data, list):
             formatted_news = []
-            for i, e in enumerate(raw_data[:10]):
+            for i, e in enumerate(raw_data[:12]): # 12개 넉넉히
                 clean_summ = e.summary.replace("<b>", "").replace("</b>", "") if hasattr(e, 'summary') else ""
                 item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\nSummary: {clean_summ[:300]}\n"
                 formatted_news.append(item)
@@ -574,35 +572,32 @@ if __name__ == "__main__":
         full_text = generate_content(news_text)
         print(f"✅ 콘텐츠 생성 완료")
 
-        # 3. 라디오 생성 (ElevenLabs)
+        # 3. 라디오 생성
         if "라디오 스크립트" in full_text:
             script = full_text.split("라디오 스크립트")[-1].strip()
         else:
             script = full_text[:500]
         generate_audio(script)
 
-        # 4. 파일 저장 (Github Pages용)
+        # 4. 파일 저장
         save_newsletter(full_text)
-        
-        # URL 생성 (카톡 전송용)
-        # 주의: 실제 배포된 주소여야 접속이 됩니다. 로컬 테스트시 링크는 404가 뜰 수 있지만 전송은 됩니다.
         web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
 
         # -------------------------------------------------------
-        # [핵심] 카카오톡 전송 단계 (여기가 빠져 있었습니다!)
+        # [핵심] API 쿼터 확보를 위한 강제 휴식 (에러 방지용)
         # -------------------------------------------------------
+        print("\n☕ AI 휴식 중... (API 에러 방지를 위해 60초 대기)")
+        time.sleep(60) 
+        # -------------------------------------------------------
+
+        # 5. 카카오톡 발송
         print("\n💬 카카오톡 발송 프로세스 시작...")
-        
-        # A. 날씨 가져오기
         weather_info = get_weather_info()
         print(f"☀️ 현재 날씨: {weather_info}")
         
-        # B. 브리핑 멘트 생성 (뉴스 앞부분 2000자만 사용)
-        kakao_briefing = generate_kakao_briefing(news_text[:2000], weather_info)
-        
-        # C. 메시지 전송 (나에게 보내기)
+        # 브리핑 생성
+        kakao_briefing = generate_kakao_briefing(news_text[:2500], weather_info)
         send_kakao_message(kakao_briefing, web_url)
-        # -------------------------------------------------------
 
         # 6. 이메일 발송
         print("\n📧 이메일 발송 준비 중...")
