@@ -2,14 +2,14 @@ name: Daily Semiconductor News Update
 
 on:
   schedule:
-    - cron: '0 21 * * *'  # 매일 한국 시간 아침 6시에 실행
+    - cron: '0 21 * * *'  # 🌍 UTC 21:00 = 한국 시간(KST) 다음날 06:00
   workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # 파일 쓰기 권한 필수!
+      contents: write    # 🔐 파일 쓰기 권한 (필수)
 
     steps:
       - uses: actions/checkout@v3
@@ -19,14 +19,14 @@ jobs:
         with:
           python-version: '3.10'
 
-    # [중요] requests 모듈을 반드시 추가해야 합니다!
+      # [라이브러리 설치] main.py 구동에 필요한 모든 것
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install google-genai elevenlabs feedparser python-dateutil googlenewsdecoder requests
 
       - name: Run script
-        env: # GitHub Secrets에서 환경변수 가져오기
+        env: # 🔑 GitHub Secrets와 연결 (Settings에서 미리 등록 필수!)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
@@ -41,5 +41,7 @@ jobs:
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add .
+          # TZ='Asia/Seoul'을 넣어야 커밋 메시지 날짜가 한국 시간으로 찍힙니다.
+          export TZ='Asia/Seoul'
           git commit -m "🚀 News Update: $(date +'%Y-%m-%d')" || exit 0
           git push
