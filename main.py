@@ -50,7 +50,7 @@ def parse_date(date_str):
 KEYWORDS = [
     'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
-    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics,
+    'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics',
     'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
 ]
 
