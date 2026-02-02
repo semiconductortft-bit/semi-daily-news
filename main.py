@@ -337,19 +337,7 @@ def get_new_kakao_token():
         print(f"❌ 토큰 요청 중 에러: {e}")
         return None
 
-# --- [기능 3] 카카오톡 전송 ---
-def send_kakao_message(briefing_text, report_url):
-    # 1. 새로운 액세스 토큰 발급 (매일 아침 수행)
-    access_token = get_new_kakao_token()
-    if not access_token:
-        print("⚠️ 토큰 발급 실패로 카톡 전송을 건너뜁니다.")
-        return
-
-    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
-    headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
     
     # 메시지 1: 알림 및 링크
     payload1 = {"template_object": json.dumps({
