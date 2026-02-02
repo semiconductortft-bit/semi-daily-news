@@ -309,9 +309,8 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 고정 문구
-    header = "반도체재료개발TFT 김동휘입니다."
-    footer = "👇 자세한 내용은 아래 버튼을 눌러 확인하세요!"
+    # 2. [고정 문구 설정] 머리말과 꼬리말 정의
+    footer = f"자세한 내용은 : {report_url}"
 
     # 본문 길이 자르기 (900자)
     safe_text = briefing_text[:900] + "\n...(중략)" if len(briefing_text) > 900 else briefing_text
