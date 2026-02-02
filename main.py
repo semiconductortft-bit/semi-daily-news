@@ -3,13 +3,16 @@ import time
 import feedparser
 import urllib.parse
 import base64
+import smtplib # 이메일 기능을 위해 상단 확인 필요
 from datetime import datetime, timedelta, timezone
 from google import genai
 from elevenlabs.client import ElevenLabs
 from collections import defaultdict
 from urllib.parse import urlparse
 from dateutil import parser as date_parser
-from googlenewsdecoder import gnewsdecoder  # URL 디코딩용
+from googlenewsdecoder import gnewsdecoder
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # 1. 환경 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -158,10 +161,20 @@ def fetch_news():
 def generate_content(news_text):
     """Gemini를 이용해 뉴스레터와 라디오 스크립트 생성"""
     print("🤖 AI 분석 및 집필 중... (가독성 최적화 모드)")
-    # 한국 시간(KST, UTC+9) 설정
+    
     KST = timezone(timedelta(hours=9))
-    today_date = datetime.now(KST).strftime("%Y년 %m월 %d일")
+    now_kst = datetime.now(KST)
+    today_date = now_kst.strftime("%Y년 %m월 %d일")
     publisher = "반도체재료개발TFT 김동휘"
+    
+    # [수정 1] 요일에 따른 뉴스 제목 분기 처리
+    # 월요일(weekday=0)이면 Weekly, 그 외는 Daily
+    if now_kst.weekday() == 0:
+        report_title = "Semi-TFT Weekly News"
+        intro_ment = "지난 한 주간의 반도체 핵심 이슈를 정리해 드립니다."
+    else:
+        report_title = "Semi-TFT Daily News"
+        intro_ment = "오늘 아침 확인해야 할 반도체 주요 소식입니다."
   
     # 프롬프트 설계
     prompt = f"""
@@ -202,7 +215,11 @@ def generate_content(news_text):
     - `### 📚 Technical Term`
     - **[용어명 (한글/영어)]**
     - Technical Term: 'BSPDN', 'Glass Substrate', 'Hybrid Bonding' 등 반도체 전문가 수준의 심도 있는 기술 용어 1개를 선정해 상세히 설명하세요.
-    
+
+    **5. Footer (저작권 및 보안 경고)**
+    - 리포트 맨 마지막에 반드시 다음 문구를 볼드체로 포함하세요:
+    `ⓒ 2026 {publisher}. All rights reserved.`
+    `[보안 경고] 본 리포트는 사내 보안 자료입니다. 무단 전재, 복사, 외부 배포를 엄격히 금지합니다.`
     ---
     
     - 구분자 `|라디오 스크립트|`를 먼저 적고 내용을 작성하세요.
