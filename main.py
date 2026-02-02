@@ -210,54 +210,64 @@ def generate_content(news_text):
         except: continue
     return "리포트 생성 실패"
 
-# --- [핵심] 안전장치가 포함된 카카오 브리핑 생성 ---
+# --- [수정 완료] 여러 모델 순차 시도 및 에러 방지 ---
 def generate_kakao_briefing(news_text, weather_str):
     print("💬 카카오톡 브리핑 생성 시도... (안전장치 모드)")
     KST = timezone(timedelta(hours=9))
     today_str = datetime.now(KST).strftime("%m-%d")
 
-    # 1. AI 시도 (가벼운 모델)
-    try:
-        prompt = f"""
-        당신은 테크 뉴스 큐레이터입니다.
-        아래 [뉴스 데이터]를 보고 카카오톡 브리핑을 작성하세요.
-        **길이는 공백 포함 900자 이내 필수.**
-
-        [형식]
-        ❄️ (날씨/기온 언급 + 따뜻한 인사 1문장)
-        ---
-        🚀 오늘의 브리핑 ({today_str})
-        
-        💡 **Executive Summary**
-        (3줄 요약)
-        
-        📰 **Headlines**
-        1. (제목)
-        2. (제목)
-        ...
-        
-        ---
-        📌 (마무리 인사)
-
-    # 리포트 작성은 가장 성능 좋은 모델 시도
+    # 1. 사용할 모델 리스트 (우선순위 순서대로)
+    # 리스트는 프롬프트 밖(파이썬 코드 영역)에 있어야 합니다!
     models = [
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gemini-2.0-flash",
         "gemini-flash-latest",
         "gemini-pro-latest"
+    ]
 
-        [데이터]:
-        {news_text}
-        """
-        response = client.models.generate_content(model=models, contents=prompt)
-        if response.text:
-            return response.text
-    except Exception as e:
-        print(f"⚠️ AI 생성 실패: {e}. 비상 모드로 전환합니다.")
+    prompt = f"""
+    당신은 테크 뉴스 큐레이터입니다.
+    아래 [뉴스 데이터]를 보고 카카오톡 브리핑을 작성하세요.
+    **길이는 공백 포함 900자 이내 필수.**
 
-    # 2. 비상 모드 (파이썬 강제 조립)
-    print("🔧 파이썬 강제 조립 모드 가동")
+    [형식]
+    ❄️ (날씨/기온 언급 + 따뜻한 인사 1문장)
+    ---
+    🚀 오늘의 브리핑 ({today_str})
+    
+    💡 **Executive Summary**
+    (3줄 요약)
+    
+    📰 **Headlines**
+    1. (제목)
+    2. (제목)
+    ...
+    
+    ---
+    📌 (마무리 인사)
+
+    [데이터]:
+    {news_text}
+    """
+
+    # 2. AI 시도 (모델 리스트를 돌면서 성공할 때까지 시도)
+    for model_name in models:
+        try:
+            print(f"   🔄 시도 중: {model_name}...")
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            
+            if response.text:
+                print(f"   ✅ 성공 ({model_name})")
+                return response.text
+                
+        except Exception as e:
+            print(f"   ⚠️ {model_name} 실패: {e}")
+            time.sleep(1) # 잠시 대기 후 다음 모델 시도
+            continue
+
+    # 3. 모든 모델 실패 시 -> 비상 모드 (파이썬 강제 조립)
+    print("🚨 모든 모델 실패. 비상 모드(파이썬 강제 조립) 가동")
     titles = []
     for line in news_text.split('\n'):
         if line.startswith("Title:"):
@@ -265,6 +275,20 @@ def generate_kakao_briefing(news_text, weather_str):
     
     fallback_msg = f"""❄️ {weather_str}, 기분 좋은 아침입니다!
 
+---
+
+🚀 오늘의 브리핑 ({today_str})
+
+💡 **Executive Summary**
+(AI 서비스 지연으로 헤드라인 위주로 전해드립니다. 자세한 내용은 리포트를 확인해주세요.)
+
+📰 **Headlines**"""
+
+    for i, t in enumerate(titles[:10]):
+        fallback_msg += f"\n{i+1}. {t}"
+
+    fallback_msg += f"\n\n---\n\n📌 오늘도 즐거운 하루 보내세요!"
+    return fallback_msg
 ---
 
 🚀 오늘의 브리핑 ({today_str})
