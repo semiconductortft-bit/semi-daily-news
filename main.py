@@ -377,7 +377,7 @@ def send_kakao_message(briefing_text, report_url):
     except Exception as e:
         print(f"❌ 전송 중 에러: {e}")
 
-# --- [수정] Executive Summary + 뉴스 제목만 간결하게 생성 ---
+# --- [수정] 집요하게 재시도하는 브리핑 생성 함수 ---
 def generate_kakao_briefing(news_text, weather_str):
     print("💬 카카오톡 브리핑 생성 중... (요약+제목 모드)")
     
@@ -385,8 +385,15 @@ def generate_kakao_briefing(news_text, weather_str):
     now = datetime.now(KST)
     today_str = now.strftime("%m-%d")
     
-    # 빠르고 똑똑한 Flash 모델 사용
-    model_name = "gemini-2.0-flash"
+    # 1. 사용할 모델 리스트 (순서대로 시도)
+    # 1.5-flash가 가장 안정적이므로 1순위로 올렸습니다.
+    available_models = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+        "gemini-pro-latest"
+    ]
 
     prompt = f"""
     당신은 테크 뉴스 큐레이터입니다.
@@ -403,7 +410,7 @@ def generate_kakao_briefing(news_text, weather_str):
     
     ---
     
-    🚀 오늘의 뉴스 브리핑({today_str})
+    🚀 오늘의 브리핑 ({today_str})
     
     💡 **Executive Summary**
     (전체 시장 흐름을 아우르는 3~4문장의 핵심 요약)
@@ -414,8 +421,6 @@ def generate_kakao_briefing(news_text, weather_str):
     3. (뉴스 3 제목)
     4. (뉴스 4 제목)
     5. (뉴스 5 제목)
-    6. (뉴스 6 제목)
-    7. (뉴스 7 제목)
     ...(최대 10개까지, 길이에 맞춰 조절)
     
     ---
@@ -426,12 +431,34 @@ def generate_kakao_briefing(news_text, weather_str):
     {news_text}
     """
     
-    try:
-        response = client.models.generate_content(model=model_name, contents=prompt)
-        return response.text if response.text else "요약 생성 실패"
-    except Exception as e:
-        print(f"❌ 생성 에러: {e}")
-        return "브리핑 생성 중 오류가 발생했습니다."
+    last_error = ""
+
+    # 2. 모델 돌려가며 시도 (Retry 로직 복구)
+    for model_name in available_models:
+        try:
+            print(f"   🔄 시도 중인 모델: {model_name}...")
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            
+            if response.text:
+                print(f"   ✅ 성공! ({model_name})")
+                return response.text
+                
+        except Exception as e:
+            error_msg = str(e)
+            last_error = error_msg
+            print(f"   ❌ {model_name} 실패: {error_msg[:100]}...")
+            
+            # 429(쿼터 초과)면 5초 쉬고 다음 모델 시도
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                print("      ⏳ 쿼터 초과! 5초 휴식 후 다음 선수 입장...")
+                time.sleep(5)
+            else:
+                time.sleep(1)
+            continue
+
+    # 3. 다 실패하면 에러 메시지 자체를 리턴 (원인 파악용)
+    print("   😱 모든 모델 실패.")
+    return f"브리핑 생성 실패.\n원인: {last_error[:200]}\n(아래 버튼을 눌러 원문 리포트를 확인하세요.)"
 
 def generate_audio(script):
     try:
