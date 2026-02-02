@@ -154,13 +154,23 @@ def send_kakao_message(briefing_text, report_url):
     except Exception as e:
         print(f"❌ 전송 실패: {e}")
 
-# --- [수정] 카카오톡 브리핑 멘트 생성 (스타일 대폭 개선) ---
+# --- [수정] 카카오톡 브리핑 멘트 생성 (모델 로테이션 + 재시도 전략) ---
 def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 멘트 생성 중... (감성 & 인사이트 모드)")
+    print("💬 카카오톡 브리핑 멘트 생성 중... (모델 로테이션 모드)")
+    
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
     today_str = now.strftime("%m-%d")
-    time_str = now.strftime("%H:%M")
+    
+    # 1. 사용할 모델 리스트 (앞쪽 모델이 실패하면 뒤쪽 모델이 투입됩니다)
+    available_models = [
+        "gemini-2.0-flash",       # 1순위: 가장 빠르고 가성비 좋음
+        "gemini-2.5-flash",       # 2순위: 최신 플래시 (가상)
+        "gemini-1.5-flash",       # 3순위: 안정적인 구형 플래시
+        "gemini-flash-latest",    # 4순위: 최신 별칭
+        "gemini-2.5-pro",         # 5순위: 고성능 (느릴 수 있음)
+        "gemini-pro-latest"       # 6순위: 최후의 보루
+    ]
     
     # 예시 스타일을 프롬프트에 직접 입력해서 학습시킵니다.
     prompt = f"""
@@ -206,14 +216,35 @@ def generate_kakao_briefing(news_text, weather_str):
     [데이터]:
     {news_text}
     """
-    
-    try:
-        # 모델은 2.0-flash가 빠르고 좋습니다
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-        return response.text
-    except Exception as e:
-        return f"브리핑 생성 실패: {e}"
 
+# 3. 모델 순환 시도 (핵심 로직)
+    for model_name in available_models:
+        try:
+            print(f"   🔄 시도 중인 모델: {model_name}...")
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            
+            if response.text:
+                print(f"   ✅ 성공! ({model_name} 사용됨)")
+                return response.text
+                
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ {model_name} 실패: {error_msg[:100]}...") # 에러 로그 짧게 출력
+            
+            # 429 에러(쿼터 초과)일 경우에만 잠시 대기 후 다음 모델로 넘어감
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                print("      ⏳ 쿼터 초과! 5초 숨 고르고 다음 모델 투입합니다.")
+                time.sleep(5) 
+                continue # 다음 for문으로 넘어감 (다음 모델 실행)
+            
+            # 그 외 에러도 일단 다음 모델 시도
+            time.sleep(2)
+            continue
+
+    # 4. 모든 모델이 다 실패했을 경우 (최후의 수단)
+    print("   😱 모든 모델 가동 실패.")
+    return f"❄️ 오늘의 브리핑\n\n죄송합니다. 현재 AI 서버 접속량이 많아 요약을 불러오지 못했습니다.\n아래 [리포트 바로가기] 버튼을 눌러 전체 내용을 확인해주세요!"
+    
 def fetch_news():
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
