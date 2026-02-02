@@ -169,17 +169,21 @@ def generate_content(news_text):
     ##### {today_date} | 발행인: {publisher}
 
     💡 **Executive Summary**
+    (줄바꿈)
     (시장 흐름 5줄 요약, 핵심 키워드 볼드체)
 
     🌍 **Market & Tech Insights**
     (뉴스 10개 각각 아래 형식으로 작성)
     1. **[기업명] 뉴스 제목**
     (내용 3문장 요약) [출처: [언론사명](URL)]
-
+    * 중요: 출처 표기 시 반드시 `[출처: [TrendForce](https://...)]` 와 같이 대괄호를 중첩하여, 리포트 상에서는 `[출처: TrendForce]` 라는 텍스트에 하이퍼링크가 걸리도록 작성할 것. URL을 괄호 `()` 안에 그대로 텍스트로 노출하지 말 것.
+    
     📚 **Technical Term**
-    (본문 중 전문 용어 1개 상세 해설)
+    (본문 중 전문 용어 1개 제시)
+    (줄바꿈) 
+    상세 해설 5줄이내
 
-   
+   (줄바꿈)
     ⓒ 2026 {publisher}. All rights reserved.🚫무단 전재, 복사, 외부 배포 엄금
     
     |라디오 스크립트|
