@@ -324,12 +324,21 @@ def send_kakao_message(briefing_text, report_url):
 
     # 2. [고정 문구 설정] 머리말과 꼬리말 정의
     header = "안녕하세요. 김동휘입니다."
-    footer = f"자세한 내용은 : {report_url}"
+    footer = f"\n\n자세한 내용은 : {report_url}"
+    suffix = "\n...(중략)"
 
-    # 본문 길이 자르기 (900자)
-    safe_text = briefing_text[:900] + "\n...(중략)" if len(briefing_text) > 900 else briefing_text
-    
-    final_text = f"{header}\n\n{safe_text}\n\n{footer}"
+    # 카카오톡 텍스트 템플릿 최대 1000자 제한
+    # header + footer는 반드시 보존 → 남은 분량 안에서만 본문을 자름
+    MAX_LEN = 1000
+    fixed_len = len(header) + len("\n\n") + len(footer)          # 고정 영역 길이
+    max_body = MAX_LEN - fixed_len - len(suffix)                 # 본문에 쓸 수 있는 최대 길이
+
+    if len(briefing_text) > max_body:
+        safe_text = briefing_text[:max_body] + suffix
+    else:
+        safe_text = briefing_text
+
+    final_text = f"{header}\n\n{safe_text}{footer}"
 
     # 버튼 강제 생성 템플릿
     template = {
