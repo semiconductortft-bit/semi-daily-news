@@ -7,7 +7,6 @@ import urllib.parse
 import smtplib
 from datetime import datetime, timedelta, timezone
 from google import genai
-from elevenlabs.client import ElevenLabs
 from collections import defaultdict
 from urllib.parse import urlparse
 from dateutil import parser as date_parser
@@ -17,8 +16,6 @@ from email.mime.multipart import MIMEMultipart
 
 # 1. 환경 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-VOICE_ID = "cjVigY5qzO86Huf0OWal"
 KAKAO_REFRESH_TOKEN = os.getenv("KAKAO_REFRESH_TOKEN")
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
@@ -185,12 +182,6 @@ def generate_content(news_text):
 
    (줄바꿈)
     ⓒ 2026 {publisher}. All rights reserved.🚫무단 전재, 복사, 외부 배포 엄금
-   
-   (줄바꿈, 실선)
-    |라디오 스크립트|
-    안녕하세요, 반도체재료개발TFT 김동휘입니다. {today_date}, 오늘 아침 확인해야 할 주요 소식입니다.
-    (뉴스 핵심 요약 40초 분량, 하십시오체)
-    오늘도 좋은 하루 보내시기 바랍니다.
 
     [뉴스 데이터]:
     {news_text}
@@ -218,7 +209,6 @@ def generate_kakao_briefing(news_text, weather_str):
     today_str = datetime.now(KST).strftime("%m-%d")
 
     # 1. 사용할 모델 리스트 (우선순위 순서대로)
-    # 리스트는 프롬프트 밖(파이썬 코드 영역)에 있어야 합니다!
     models = [
         "gemini-2.5-flash",
         "gemini-2.5-pro",
@@ -360,34 +350,14 @@ def send_kakao_message(briefing_text, report_url):
         else: print(f"❌ 전송 실패: {res.text}")
     except Exception as e: print(f"❌ 전송 에러: {e}")
 
-def generate_audio(script):
-    try:
-        if not ELEVENLABS_API_KEY: return
-        client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-        audio = client.text_to_speech.convert(
-            voice_id=VOICE_ID,
-            text=script[:5000],
-            model_id="eleven_multilingual_v2"
-        )
-        with open("radio.mp3", "wb") as f:
-            for chunk in audio: f.write(chunk)
-    except Exception as e: print(f"⚠️ 오디오 실패: {e}")
-
 def save_newsletter(content):
-    import shutil
     KST = timezone(timedelta(hours=9))
     date_str = datetime.now(KST).strftime("%Y-%m-%d")
     folder = f"newsletter/{date_str}"
     if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
-    
-    if os.path.exists("radio.mp3"):
-        shutil.move("radio.mp3", os.path.join(folder, "radio.mp3"))
-        
-    audio_tag = f"<audio controls style='width:100%'><source src='radio.mp3'></audio>\n\n---\n\n"
-    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: f.write(audio_tag + content)
-    
-    main_audio = f"<audio controls style='width:100%'><source src='{folder}/radio.mp3'></audio>\n\n---\n\n"
-    with open("index.md", "w", encoding="utf-8") as f: f.write(main_audio + content)
+
+    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: f.write(content)
+    with open("index.md", "w", encoding="utf-8") as f: f.write(content)
 
 def send_email(subject, body, to_email):
     gmail_user = os.getenv("GMAIL_USER")
@@ -423,10 +393,6 @@ if __name__ == "__main__":
 
         # 콘텐츠 생성
         full_text = generate_content(news_text)
-        
-        # 오디오 생성
-        script = full_text.split("라디오 스크립트")[-1].strip() if "라디오 스크립트" in full_text else full_text[:500]
-        generate_audio(script)
         
         # 저장
         save_newsletter(full_text)
