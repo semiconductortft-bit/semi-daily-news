@@ -39,20 +39,25 @@ jobs:
         run: python main.py
 
       - name: Commit and Push changes
-        # pwsh 대신 powershell로 변경
         shell: powershell
         run: |
+          # 1. 보안 예외 처리 (이 명령어를 반드시 가장 먼저 실행하세요)
+          git config --global --add safe.directory C:/actions-runner/actions-runner/_work/semi-daily-news/semi-daily-news
+          
+          # 2. 사용자 설정
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
+          
+          # 3. 변경 사항 추가 및 커밋
           git add .
           
-          # 윈도우 기본 PowerShell용 날짜 포맷
           $currentDate = Get-Date -Format "yyyy-MM-dd"
+          # 커밋할 내용이 없을 때 에러가 나지 않도록 try-catch 또는 exit code 확인
           git commit -m "🚀 News Update: $currentDate"
           
           if ($LASTEXITCODE -eq 0) {
               Write-Host "변경 사항이 있어 푸시를 진행합니다."
               git push
           } else {
-              Write-Host "커밋할 변경 사항이 없어 단계를 종료합니다."
+              Write-Host "커밋할 변경 사항이 없습니다."
           }
