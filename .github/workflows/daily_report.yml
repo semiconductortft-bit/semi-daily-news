@@ -6,12 +6,13 @@ on:
   workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
-    build:
-    runs-on: self-hosted    # ⭕ "내 컴퓨터에서 실행해!"라는 뜻입니다.
-    permissions:
-      contents: write    # 🔐 파일 쓰기 권한 (필수)
-    env:
+  build:             # (스페이스 2칸)
+    runs-on: self-hosted
+    env:             # (스페이스 4칸) build 바로 아래에 위치
       PYTHONIOENCODING: utf-8
+    permissions:     # (스페이스 4칸)
+      contents: write
+
     steps:
       - uses: actions/checkout@v3
 
