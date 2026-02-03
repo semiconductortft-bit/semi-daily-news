@@ -39,20 +39,17 @@ jobs:
         run: python main.py
 
       - name: Commit and Push changes
-        shell: pwsh
+        # pwsh 대신 powershell로 변경
+        shell: powershell
         run: |
-          # 1. 사용자 설정
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-          
-          # 2. 변경 사항 추가
           git add .
           
-          # 3. 커밋 실행 (로컬에서 성공했던 PowerShell 문법 적용)
-          # Get-Date는 기본적으로 서버(한국 컴퓨터)의 시간을 따라갑니다.
-          git commit -m "🚀 News Update: $(Get-Date -Format 'yyyy-MM-dd')"
+          # 윈도우 기본 PowerShell용 날짜 포맷
+          $currentDate = Get-Date -Format "yyyy-MM-dd"
+          git commit -m "🚀 News Update: $currentDate"
           
-          # 4. 커밋 성공 여부 확인 후 푸시
           if ($LASTEXITCODE -eq 0) {
               Write-Host "변경 사항이 있어 푸시를 진행합니다."
               git push
