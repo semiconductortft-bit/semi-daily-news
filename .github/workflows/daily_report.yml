@@ -2,7 +2,7 @@ name: Daily Semiconductor News Update
 
 on:
   schedule:
-    - cron: '00 22 * * *'  # 🌍 UTC 21:00 = 한국 시간(KST) 다음날 07:00
+    - cron: '13 22 * * *'  # 🌍 한국 시간(KST) 다음날 07:13
   workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
