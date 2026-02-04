@@ -1,0 +1,19 @@
+---
+---
+@import "minima";
+
+/* 헤더 강제 삭제 구문 */
+.site-header, header, .site-title, .project-name { 
+    display: none !important; 
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 헤더 삭제 후 상단 여백 제거 */
+body, .page-content, .markdown-body {
+    margin-top: 0 !important;
+    padding-top: 10px !important;
+}
