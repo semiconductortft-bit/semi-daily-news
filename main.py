@@ -284,10 +284,10 @@ def generate_kakao_briefing(news_text, weather_str):
     
     fallback_msg = f"""❄️ {weather_str}, 좋은 아침입니다!
 
-    ---
-    🚀 오늘의 반도체 헤드라인 ({today_str})
+---
+🚀 오늘의 반도체 헤드라인 ({today_str})
 
-    (AI 서비스 지연으로 제목만 전송합니다)"""
+(AI 서비스 지연으로 제목만 전송합니다)"""
 
     for i, t in enumerate(titles[:10]):
         fallback_msg += f"\n{i+1}. {t}"
@@ -420,15 +420,25 @@ title: "{report_title} ({date_str})"
 """
     final_content = front_matter + content
 
+    # 날짜별 폴더에 index.md 저장
     folder = f"newsletter/{date_str}"
-    if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
+    if not os.path.exists(folder): 
+        os.makedirs(folder, exist_ok=True)
 
-    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: f.write(final_content)
-    with open("index.md", "w", encoding="utf-8") as f: f.write(final_content)
+    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: 
+        f.write(final_content)
+    
+    # 루트 index.md도 동일하게 업데이트
+    with open("index.md", "w", encoding="utf-8") as f: 
+        f.write(final_content)
+    
+    print(f"✅ 리포트 저장 완료: {folder}/index.md")
 
 def send_kakao_message(briefing_text, report_url):
     access_token = get_new_kakao_token()
-    if not access_token: return
+    if not access_token: 
+        print("❌ 카카오 토큰 갱신 실패")
+        return
 
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     headers = {
@@ -436,11 +446,17 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    header = "안녕하세요. 김동휘입니다."
-    footer = f"\n\n🔗 원문 링크 모음 : {report_url}"
-    suffix = "\n...(더 보기)"
+    # 짧은 URL로 변경 (bit.ly 사용)
+    try:
+        short_url = shorten_url(report_url)
+    except:
+        short_url = report_url
 
-    MAX_LEN = 1000
+    header = "📦 김동휘입니다."
+    footer = f"\n\n🔗 {short_url}"
+    suffix = "\n...(더보기)"
+
+    MAX_LEN = 950  # 여유 확보
     fixed_len = len(header) + len("\n\n") + len(footer)
     max_body = MAX_LEN - fixed_len - len(suffix)
 
@@ -457,7 +473,7 @@ def send_kakao_message(briefing_text, report_url):
         "link": {"web_url": report_url, "mobile_web_url": report_url},
         "buttons": [
             {
-                "title": "뉴스 큐레이션 보기 🔗",
+                "title": "📰 전체 리포트 보기",
                 "link": {"web_url": report_url, "mobile_web_url": report_url}
             }
         ]
@@ -465,9 +481,24 @@ def send_kakao_message(briefing_text, report_url):
 
     try:
         res = requests.post(url, headers=headers, data={"template_object": json.dumps(template)})
-        if res.status_code == 200: print("✅ 카카오톡 전송 성공")
-        else: print(f"❌ 전송 실패: {res.text}")
-    except Exception as e: print(f"❌ 전송 에러: {e}")
+        if res.status_code == 200: 
+            print("✅ 카카오톡 전송 성공")
+        else: 
+            print(f"❌ 카카오톡 전송 실패: {res.text}")
+    except Exception as e: 
+        print(f"❌ 카카오톡 전송 에러: {e}")
+
+def shorten_url(long_url):
+    """bit.ly API를 사용하여 URL 단축"""
+    try:
+        # bit.ly 무료 API (인증 없이 사용 가능한 대안)
+        api_url = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(long_url)}"
+        response = requests.get(api_url, timeout=5)
+        if response.status_code == 200:
+            return response.text
+    except:
+        pass
+    return long_url
 
 def send_email(subject, body, to_email):
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
@@ -485,7 +516,8 @@ def send_email(subject, body, to_email):
         s.send_message(msg)
         s.quit()
         print("📧 이메일 전송 성공")
-    except Exception as e: print(f"❌ 이메일 실패: {e}")
+    except Exception as e: 
+        print(f"❌ 이메일 실패: {e}")
 
 # =========================================================
 # 7. 메인 실행 블록
@@ -513,12 +545,19 @@ if __name__ == "__main__":
         # AI 리포트 생성
         full_text = generate_content(news_text)
         
+        # 리포트가 제대로 생성되었는지 확인
+        if not full_text or full_text == "리포트 생성 실패":
+            print("❌ 리포트 생성 실패 - 종료")
+            exit(1)
+        
         # 저장
         save_newsletter(full_text)
         
         KST = timezone(timedelta(hours=9))
         date_str = datetime.now(KST).strftime("%Y-%m-%d")
-        web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
+        
+        # 루트 URL로 간단하게 변경
+        web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/"
 
         print("☕ API 보호 대기 (60초)...")
         time.sleep(60)
@@ -533,3 +572,5 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"⚠️ 시스템 치명적 에러: {e}")
+        import traceback
+        traceback.print_exc()
