@@ -24,10 +24,8 @@ KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
-# 클라이언트 초기화
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 검색 키워드 (반도체 소재 및 패키징 중심)
 KEYWORDS = [
     'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
@@ -35,7 +33,6 @@ KEYWORDS = [
     'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
 ]
 
-# 타겟 매체 (글로벌)
 GLOBAL_TARGETS = {
     "semiengineering.com": "Semiconductor Engineering",
     "3dincites.com": "3D InCites",
@@ -52,7 +49,6 @@ GLOBAL_TARGETS = {
     "asia.nikkei.com": "Nikkei Asia"
 }
 
-# 타겟 매체 (국내)
 KOREA_TARGETS = {
     "thelec.kr": "TheElec",
     "etnews.com": "ETNews",
@@ -111,7 +107,6 @@ def fetch_news():
         print("📅 일요일은 리포트를 휴간합니다.")
         return None
 
-    # 평일 기준 검색 범위 설정
     search_period = "7d" if weekday == 0 else "2d"
     cutoff_hours = 168 if weekday == 0 else 48
     cutoff_date = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
@@ -134,7 +129,6 @@ def fetch_news():
     valid_articles = []
     seen_links = set()
 
-    # 필터링 및 디코딩
     for e in raw_articles:
         if e.link in seen_links: continue
         try:
@@ -143,7 +137,6 @@ def fetch_news():
             if pub_date < cutoff_date: continue
         except: continue
 
-        # Google News URL 디코딩
         try:
             decoded_res = gnewsdecoder(e.link)
             if isinstance(decoded_res, dict):
@@ -167,7 +160,6 @@ def fetch_news():
         valid_articles.append(e)
         seen_links.add(e.link)
 
-    # 매체별 균형 맞추기
     buckets = defaultdict(list)
     for e in valid_articles: buckets[e['display_source']].append(e)
     
@@ -184,7 +176,6 @@ def fetch_news():
 
     final_selection.sort(key=lambda x: x['parsed_date'], reverse=True)
     
-    # AI 입력용 텍스트 포맷팅 (요약 없음, 제목과 링크만 전달)
     formatted_text = []
     for i, e in enumerate(final_selection):
         item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\n"
@@ -193,7 +184,7 @@ def fetch_news():
     return "\n".join(formatted_text)
 
 # =========================================================
-# 4. 콘텐츠 생성 (Gemini) - [수정 완료]
+# 4. 콘텐츠 생성 (Gemini) - [수정됨]
 # =========================================================
 def generate_content(news_text):
     print("🤖 AI 전체 리포트 작성 중... (Safe Mode + Material Insight)")
@@ -202,10 +193,9 @@ def generate_content(news_text):
     today_date = now_kst.strftime("%Y년 %m월 %d일")
     publisher = "반도체재료개발TFT 김동휘"
     
-    # [수정 1] 타이틀 간소화 (큐레이터 삭제)
     report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
 
-    # [수정 2] 프롬프트 업데이트: 요약 금지 및 Material Insight 추가
+    # [수정] 본문 최상단 제목 삭제 (save_newsletter에서 Front Matter로 처리)
     prompt = f"""
     당신은 반도체 소재 개발 엔지니어이자 산업 분석가입니다.
     저작권법 준수를 위해 기사 내용을 요약하거나 재생산하지 마십시오.
@@ -214,10 +204,9 @@ def generate_content(news_text):
     [작성 규칙]
     1. 기사 내용 요약 금지 (제목과 링크만 제공).
     2. Executive Summary는 전체 뉴스 제목들을 보고 느껴지는 '오늘의 반도체 키워드 및 분위기'만 3줄로 작성.
-    3. **Packaging Material Insight**는 '반도체 후공정 소재(EMC, Underfill, Paste, Film 등)' 개발자 관점에서 오늘의 뉴스들이 소재 기술에 미칠 영향이나 중요성을 1문장으로 통찰력 있게 작성.
+    3. Packaging Material Insight는 '반도체 후공정 소재(EMC, Underfill, Paste, Film 등)' 개발자 관점에서 오늘의 뉴스들이 소재 기술에 미칠 영향이나 중요성을 1문장으로 작성.
 
     [필수 형식 - 마크다운]
-    # 📦 {report_title}
     ##### {today_date} | 발행인: {publisher}
 
     💡 **Today's Market Mood**
@@ -253,7 +242,7 @@ def generate_content(news_text):
     return "리포트 생성 실패"
 
 def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 생성 시도... (Safe Mode)")
+    print("💬 카카오톡 브리핑 생성 시도...")
     KST = timezone(timedelta(hours=9))
     today_str = datetime.now(KST).strftime("%m-%d")
 
@@ -289,7 +278,6 @@ def generate_kakao_briefing(news_text, weather_str):
             time.sleep(1)
             continue
 
-    # 비상 모드 (파이썬 문자열 처리)
     titles = []
     for line in news_text.split('\n'):
         if line.startswith("Title:"):
@@ -309,8 +297,31 @@ def generate_kakao_briefing(news_text, weather_str):
     return fallback_msg
 
 # =========================================================
-# 5. 전송 및 저장
+# 5. 전송 및 저장 - [수정됨: Front Matter 추가]
 # =========================================================
+def save_newsletter(content):
+    KST = timezone(timedelta(hours=9))
+    now = datetime.now(KST)
+    date_str = now.strftime("%Y-%m-%d")
+    
+    # 웹페이지 상단 타이틀 설정을 위한 Front Matter 추가
+    report_title = "Semi-TFT Weekly News" if now.weekday() == 0 else "Semi-TFT Daily News"
+    front_matter = f"""---
+layout: default
+title: "{report_title} ({date_str})"
+---
+
+# 📦 {report_title}
+"""
+    # Front Matter + 본문 결합
+    final_content = front_matter + content
+
+    folder = f"newsletter/{date_str}"
+    if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
+
+    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: f.write(final_content)
+    with open("index.md", "w", encoding="utf-8") as f: f.write(final_content)
+
 def send_kakao_message(briefing_text, report_url):
     access_token = get_new_kakao_token()
     if not access_token: return
@@ -354,15 +365,6 @@ def send_kakao_message(briefing_text, report_url):
         else: print(f"❌ 전송 실패: {res.text}")
     except Exception as e: print(f"❌ 전송 에러: {e}")
 
-def save_newsletter(content):
-    KST = timezone(timedelta(hours=9))
-    date_str = datetime.now(KST).strftime("%Y-%m-%d")
-    folder = f"newsletter/{date_str}"
-    if not os.path.exists(folder): os.makedirs(folder, exist_ok=True)
-
-    with open(f"{folder}/index.md", "w", encoding="utf-8") as f: f.write(content)
-    with open("index.md", "w", encoding="utf-8") as f: f.write(content)
-
 def send_email(subject, body, to_email):
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         print("⚠️ 이메일 설정 누락으로 전송 건너뜀")
@@ -400,18 +402,17 @@ if __name__ == "__main__":
 
         # AI 리포트 생성
         full_text = generate_content(news_text)
+        
+        # 저장 (여기서 Front Matter가 자동으로 붙음)
         save_newsletter(full_text)
         
-        # URL 생성 (GitHub Pages 경로)
         KST = timezone(timedelta(hours=9))
         date_str = datetime.now(KST).strftime("%Y-%m-%d")
         web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
 
-        # API 과부하 방지 (60초 대기)
         print("☕ API 보호 대기 (60초)...")
         time.sleep(60)
 
-        # 카카오톡 & 이메일 전송
         weather = get_weather_info()
         kakao_msg = generate_kakao_briefing(news_text, weather)
         send_kakao_message(kakao_msg, web_url)
