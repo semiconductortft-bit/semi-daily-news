@@ -184,7 +184,7 @@ def fetch_news():
     return "\n".join(formatted_text)
 
 # =========================================================
-# 4. 콘텐츠 생성 (Gemini) - [수정됨]
+# 4. 콘텐츠 생성 (Gemini)
 # =========================================================
 def generate_content(news_text):
     print("🤖 AI 전체 리포트 작성 중... (Safe Mode + Material Insight)")
@@ -195,7 +195,7 @@ def generate_content(news_text):
     
     report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
 
-    # [수정] 본문 최상단 제목 삭제 (save_newsletter에서 Front Matter로 처리)
+    # 상단 파란색 사이트 제목 제거를 위해 본문에서 H1(#) 태그 제거
     prompt = f"""
     당신은 반도체 소재 개발 엔지니어이자 산업 분석가입니다.
     저작권법 준수를 위해 기사 내용을 요약하거나 재생산하지 마십시오.
@@ -297,23 +297,34 @@ def generate_kakao_briefing(news_text, weather_str):
     return fallback_msg
 
 # =========================================================
-# 5. 전송 및 저장 - [수정됨: Front Matter 추가]
+# 5. 전송 및 저장 - [강력 수정: 파란 글씨 강제 삭제 CSS]
 # =========================================================
 def save_newsletter(content):
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
     date_str = now.strftime("%Y-%m-%d")
     
-    # 웹페이지 상단 타이틀 설정을 위한 Front Matter 추가
     report_title = "Semi-TFT Weekly News" if now.weekday() == 0 else "Semi-TFT Daily News"
+    
+    # [핵심] CSS를 주입하여 GitHub Pages의 기본 사이트 제목(.site-title)을 안 보이게 처리
+    hide_header_css = """
+<style>
+/* GitHub Pages 기본 테마의 헤더(파란 글씨) 숨기기 */
+.site-title, .site-header { display: none !important; }
+/* 헤더가 사라져서 너무 붙는 것을 방지 */
+body { margin-top: 30px !important; }
+</style>
+"""
+
     front_matter = f"""---
 layout: default
 title: "{report_title} ({date_str})"
 ---
+{hide_header_css}
 
 # 📦 {report_title}
 """
-    # Front Matter + 본문 결합
+    # Front Matter + CSS + 본문 결합
     final_content = front_matter + content
 
     folder = f"newsletter/{date_str}"
@@ -403,7 +414,7 @@ if __name__ == "__main__":
         # AI 리포트 생성
         full_text = generate_content(news_text)
         
-        # 저장 (여기서 Front Matter가 자동으로 붙음)
+        # 저장 (CSS 주입됨)
         save_newsletter(full_text)
         
         KST = timezone(timedelta(hours=9))
