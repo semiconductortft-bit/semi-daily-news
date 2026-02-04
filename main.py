@@ -19,11 +19,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 KAKAO_REFRESH_TOKEN = os.getenv("KAKAO_REFRESH_TOKEN")
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
+GMAIL_USER = os.getenv("GMAIL_USER")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
 # 클라이언트 초기화
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 2. 키워드 및 타겟 매체 설정 (확장판)
+# 2. 키워드 및 타겟 매체 설정 (기존 유지)
 KEYWORDS = [
     'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
@@ -69,7 +71,6 @@ def fetch_news():
         print("📅 일요일은 리포트를 휴간합니다.")
         return None
 
-    # [중요] 기사 확보를 위해 평일에도 2일치 검색
     search_period = "7d" if weekday == 0 else "2d"
     cutoff_hours = 168 if weekday == 0 else 48
     cutoff_date = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
@@ -141,59 +142,62 @@ def fetch_news():
     
     formatted_text = []
     for i, e in enumerate(final_selection):
-        # AI에게 줄 때는 요약 내용 포함
-        clean_summ = e.summary.replace("<b>", "").replace("</b>", "") if hasattr(e, 'summary') else ""
-        item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\nSummary: {clean_summ[:200]}\n"
+        # 법적 안전장치: AI에게 내용을 주더라도 '요약'이 아닌 '분류'에만 쓰도록 프롬프트에서 제어
+        # 여기서는 최소한의 정보만 전달
+        item = f"[{i+1}] Source: {e['display_source']}\nTitle: {e.title}\nURL: {e['clean_url']}\n"
         formatted_text.append(item)
     
     return "\n".join(formatted_text)
 
 def generate_content(news_text):
-    print("🤖 AI 전체 리포트 작성 중...")
+    print("🤖 AI 전체 리포트 작성 중... (Safe Mode)")
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     today_date = now_kst.strftime("%Y년 %m월 %d일")
     publisher = "반도체재료개발TFT 김동휘"
     
-    report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
+    report_title = "Semi-TFT Weekly Curation" if now_kst.weekday() == 0 else "Semi-TFT Daily Curation"
 
+    # [수정됨] 요약 금지 및 링크 중심 프롬프트
     prompt = f"""
-    당신은 반도체 산업 수석 전략가입니다. 아래 [뉴스 데이터]를 기반으로 '{report_title}'를 작성하세요.
-    날짜: {today_date}, 발행인: {publisher}
+    당신은 반도체 산업 뉴스 큐레이터입니다.
+    저작권법 준수를 위해 기사의 내용을 요약하거나 재생산하지 마십시오.
+    오직 기사의 '제목', '카테고리(키워드)', '출처'만 정리하여 독자가 원문을 방문하도록 유도해야 합니다.
+
+    [작성 규칙]
+    1. 기사 내용 요약 금지.
+    2. Executive Summary는 개별 기사의 내용이 아닌, 전체 뉴스 제목들을 보고 느껴지는 '오늘의 반도체 키워드 및 분위기'만 3줄로 작성.
+    3. 각 뉴스는 제목과 링크, 그리고 관련 기술 태그(예: #HBM, #Foundry 등)만 표시.
 
     [필수 형식 - 마크다운]
-    # 📦 오늘의 반도체 뉴스
+    # 📦 오늘의 반도체 뉴스 큐레이션
     ##### {today_date} | 발행인: {publisher}
 
-    💡 **Executive Summary**
+    💡 **Today's Market Mood**
+    (전체적인 시장 기술 트렌드나 분위기만 3줄 작성 - 개별 기사 언급 금지)
+
+    🌍 **Headlines & Links**
+    (뉴스 10개 작성)
+    1. **[기사 제목 그대로 작성]**
+       - 🏷️ 태그: [관련 기술/기업 태그]
+       - 🔗 원문: [[언론사명](URL)] (반드시 원문 링크 적용)
+
+    📚 **Word of the Day**
+    (제목에 등장한 기술 용어 중 1개 선정하여 1줄 정의)
+
     (줄바꿈)
-    (시장 흐름 5줄 요약, 핵심 키워드 볼드체)
-
-    🌍 **Market & Tech Insights**
-    (뉴스 10개 각각 아래 형식으로 작성)
-    1. **[기업명] 뉴스 제목**
-    (내용 3문장 요약) [출처: [언론사명](URL)]
-    * 중요: 출처 표기 시 반드시 `[출처: [TrendForce](https://...)]` 와 같이 대괄호를 중첩하여, 리포트 상에서는 `[출처: TrendForce]` 라는 텍스트에 하이퍼링크가 걸리도록 작성할 것. URL을 괄호 `()` 안에 그대로 텍스트로 노출하지 말 것.
-    
-    📚 **Technical Term**
-    (본문 중 전문 용어 1개 제시)
-    (줄바꿈) 
-    상세 해설 5줄이내
-
-   (줄바꿈)
-    ⓒ 2026 {publisher}. All rights reserved.🚫무단 전재, 복사, 외부 배포 엄금
+    ---
+    *본 리포트는 뉴스 링크를 큐레이션하여 제공하며, 기사의 저작권은 각 언론사에 있습니다. 상세 내용은 반드시 원문 링크를 확인하시기 바랍니다.*
+    ⓒ 2026 {publisher}.
 
     [뉴스 데이터]:
     {news_text}
     """
     
-    # 리포트 작성은 가장 성능 좋은 모델 시도
     models = [
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gemini-2.0-flash",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
     ]
     for m in models:
         try:
@@ -202,83 +206,61 @@ def generate_content(news_text):
         except: continue
     return "리포트 생성 실패"
 
-# --- [수정 완료] 여러 모델 순차 시도 및 에러 방지 ---
 def generate_kakao_briefing(news_text, weather_str):
-    print("💬 카카오톡 브리핑 생성 시도... (안전장치 모드)")
+    print("💬 카카오톡 브리핑 생성 시도... (Safe Mode)")
     KST = timezone(timedelta(hours=9))
     today_str = datetime.now(KST).strftime("%m-%d")
 
-    # 1. 사용할 모델 리스트 (우선순위 순서대로)
-    models = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.0-flash",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
-    ]
+    models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
 
+    # [수정됨] 카톡 내용도 요약 없이 헤드라인 위주
     prompt = f"""
-    당신은 테크 뉴스 큐레이터입니다.
-    아래 [뉴스 데이터]를 보고 카카오톡 브리핑을 작성하세요.
-    **길이는 공백 포함 900자 이내 필수.**
+    당신은 테크 뉴스 알리미입니다.
+    저작권 보호를 위해 기사 내용을 요약하지 말고, 헤드라인 리스트만 작성하세요.
+    길이는 공백 포함 900자 이내.
 
     [형식]
-    ❄️ (날씨/기온 언급 + 따뜻한 인사 1문장)
+    ❄️ (날씨/기온 + 짧은 인사)
     ---
-    🚀 오늘의 브리핑 ({today_str})
+    🚀 오늘의 반도체 헤드라인 ({today_str})
     
-    💡 **Executive Summary**
-    (3줄 요약)
-    
-    📰 **Headlines**
-    1. (제목)
-    2. (제목)
+    (뉴스 제목들만 나열)
+    1. (제목) - (매체명)
+    2. (제목) - (매체명)
     ...
     
     ---
-    📌 (마무리 인사)
+    📌 자세한 내용은 아래 [리포트 전체 보기]를 눌러 원문을 확인해주세요.
 
     [데이터]:
     {news_text}
     """
 
-# 2. AI 시도 (모델 리스트를 돌면서 성공할 때까지 시도)
     for model_name in models:
         try:
-            print(f"   🔄 시도 중: {model_name}...")
             response = client.models.generate_content(model=model_name, contents=prompt)
-            
-            if response.text:
-                print(f"   ✅ 성공 ({model_name})")
-                return response.text
-                
+            if response.text: return response.text
         except Exception as e:
-            print(f"   ⚠️ {model_name} 실패: {e}")
-            time.sleep(1) # 잠시 대기 후 다음 모델 시도
+            time.sleep(1)
             continue
 
-    # 3. 모든 모델 실패 시 -> 비상 모드 (파이썬 강제 조립)
-    print("🚨 모든 모델 실패. 비상 모드(파이썬 강제 조립) 가동")
+    # 비상 모드 (파이썬 처리)
     titles = []
     for line in news_text.split('\n'):
         if line.startswith("Title:"):
             titles.append(line.replace("Title:", "").strip())
     
-    fallback_msg = f"""❄️ {weather_str}, 기분 좋은 아침입니다!
+    fallback_msg = f"""❄️ {weather_str}, 좋은 아침입니다!
 
     ---
+    🚀 오늘의 반도체 헤드라인 ({today_str})
 
-    🚀 오늘의 브리핑 ({today_str})
-
-    💡 **Executive Summary**
-    (AI 서비스 지연으로 헤드라인 위주로 전해드립니다. 자세한 내용은 리포트를 확인해주세요.)
-
-    📰 **Headlines**"""
+    (AI 지연으로 제목만 전송합니다)"""
 
     for i, t in enumerate(titles[:10]):
         fallback_msg += f"\n{i+1}. {t}"
 
-    fallback_msg += f"\n\n---\n\n📌 오늘도 즐거운 하루 보내세요!"
+    fallback_msg += f"\n\n---\n📌 원문 링크는 리포트를 확인해주세요."
     return fallback_msg
 
 def get_weather_info():
@@ -311,7 +293,6 @@ def get_new_kakao_token():
         return tokens.get("access_token")
     except: return None
 
-# --- [핵심] 버튼 강제 삽입 & URL 숨김 전송 ---
 def send_kakao_message(briefing_text, report_url):
     access_token = get_new_kakao_token()
     if not access_token: return
@@ -322,16 +303,14 @@ def send_kakao_message(briefing_text, report_url):
         "Content-Type": "application/x-www-form-urlencoded"
     }
 
-    # 2. [고정 문구 설정] 머리말과 꼬리말 정의
     header = "안녕하세요. 김동휘입니다."
-    footer = f"\n\n자세한 내용은 : {report_url}"
-    suffix = "\n...(중략)"
+    # 법적 보호를 위해 문구 변경
+    footer = f"\n\n🔗 원문 링크 모음 : {report_url}"
+    suffix = "\n...(더 보기)"
 
-    # 카카오톡 텍스트 템플릿 최대 1000자 제한
-    # header + footer는 반드시 보존 → 남은 분량 안에서만 본문을 자름
     MAX_LEN = 1000
-    fixed_len = len(header) + len("\n\n") + len(footer)          # 고정 영역 길이
-    max_body = MAX_LEN - fixed_len - len(suffix)                 # 본문에 쓸 수 있는 최대 길이
+    fixed_len = len(header) + len("\n\n") + len(footer)
+    max_body = MAX_LEN - fixed_len - len(suffix)
 
     if len(briefing_text) > max_body:
         safe_text = briefing_text[:max_body] + suffix
@@ -340,14 +319,13 @@ def send_kakao_message(briefing_text, report_url):
 
     final_text = f"{header}\n\n{safe_text}{footer}"
 
-    # 버튼 강제 생성 템플릿
     template = {
         "object_type": "text",
         "text": final_text,
         "link": {"web_url": report_url, "mobile_web_url": report_url},
         "buttons": [
             {
-                "title": "리포트 전체 보기 🔗",
+                "title": "큐레이션 리포트 보기 🔗",
                 "link": {"web_url": report_url, "mobile_web_url": report_url}
             }
         ]
@@ -369,61 +347,55 @@ def save_newsletter(content):
     with open("index.md", "w", encoding="utf-8") as f: f.write(content)
 
 def send_email(subject, body, to_email):
-    gmail_user = os.getenv("GMAIL_USER")
-    gmail_pw = os.getenv("GMAIL_APP_PASSWORD")
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        print("⚠️ 이메일 설정 누락으로 전송 건너뜀")
+        return
+
     msg = MIMEMultipart()
-    msg['From'] = gmail_user
+    msg['From'] = GMAIL_USER
     msg['To'] = to_email
     msg['Subject'] = subject
     msg.attach(MIMEText(body, 'html'))
     try:
         s = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        s.login(gmail_user, gmail_pw)
+        s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         s.send_message(msg)
         s.quit()
         print("📧 이메일 전송 성공")
     except Exception as e: print(f"❌ 이메일 실패: {e}")
 
-# --- 메인 실행 ---
 if __name__ == "__main__":
     try:
-        print("🚀 리포트 공정 시작")
+        print("🚀 큐레이션 공정 시작")
         raw_data = fetch_news()
         
-        # 데이터가 리스트면 텍스트로 변환, 없으면 종료
         if not raw_data: 
             print("뉴스 없음 종료")
             exit(0)
             
-        if isinstance(raw_data, list): # 혹시 list로 오면 변환
+        if isinstance(raw_data, list):
             news_text = "\n".join([f"Title: {e.title}" for e in raw_data])
         else:
             news_text = raw_data
 
-        # 콘텐츠 생성
         full_text = generate_content(news_text)
-        
-        # 저장
         save_newsletter(full_text)
         
-        # URL 생성
         KST = timezone(timedelta(hours=9))
         date_str = datetime.now(KST).strftime("%Y-%m-%d")
+        # GitHub Pages URL 형식에 맞게 수정
         web_url = f"https://semiconductortft-bit.github.io/semi-daily-news/newsletter/{date_str}/"
 
-        # 60초 대기 (API 보호)
-        print("☕ 60초 휴식...")
+        print("☕ API 보호 대기 (60초)...")
         time.sleep(60)
 
-        # 카카오톡 전송 (안전장치 적용됨)
         weather = get_weather_info()
         kakao_msg = generate_kakao_briefing(news_text, weather)
         send_kakao_message(kakao_msg, web_url)
 
-        # 이메일 전송
-        send_email(f"📦 [반도체 데일리] {date_str}", full_text.replace("\n", "<br>"), "keenhwi@gmail.com")
+        send_email(f"📦 [반도체 큐레이션] {date_str}", full_text.replace("\n", "<br>"), "keenhwi@gmail.com")
         
         print("✅ 모든 공정 완료")
         
     except Exception as e:
-        print(f"⚠️ 시스템 치명적 에러: {e}")
+        print(f"⚠️ 시스템 에러: {e}")
