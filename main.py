@@ -195,7 +195,7 @@ def generate_content(news_text):
     
     report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
 
-    # 상단 파란색 사이트 제목 제거를 위해 본문에서 H1(#) 태그 제거
+    # [수정] 본문 최상단 제목 삭제 (save_newsletter에서 Front Matter로 처리)
     prompt = f"""
     당신은 반도체 소재 개발 엔지니어이자 산업 분석가입니다.
     저작권법 준수를 위해 기사 내용을 요약하거나 재생산하지 마십시오.
@@ -297,7 +297,7 @@ def generate_kakao_briefing(news_text, weather_str):
     return fallback_msg
 
 # =========================================================
-# 5. 전송 및 저장 - [강력 수정: 파란 글씨 강제 삭제 CSS]
+# 5. 전송 및 저장 - [강력 수정: 헤더 완전 삭제 CSS]
 # =========================================================
 def save_newsletter(content):
     KST = timezone(timedelta(hours=9))
@@ -306,13 +306,22 @@ def save_newsletter(content):
     
     report_title = "Semi-TFT Weekly News" if now.weekday() == 0 else "Semi-TFT Daily News"
     
-    # [핵심] CSS를 주입하여 GitHub Pages의 기본 사이트 제목(.site-title)을 안 보이게 처리
+    # [핵심] GitHub Pages 기본 테마의 헤더 영역을 통째로 날려버리는 강력한 CSS
     hide_header_css = """
 <style>
-/* GitHub Pages 기본 테마의 헤더(파란 글씨) 숨기기 */
-.site-title, .site-header { display: none !important; }
-/* 헤더가 사라져서 너무 붙는 것을 방지 */
-body { margin-top: 30px !important; }
+    /* 사이트 헤더, 제목, 프로젝트 이름 등 상단 바 영역 완전 숨김 */
+    header, .site-header, .site-title, .project-name {
+        display: none !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+    /* 헤더가 사라진 후 본문이 너무 위로 붙지 않도록 여백 조정 */
+    body, .page-content, .markdown-body {
+        margin-top: 0 !important;
+        padding-top: 20px !important;
+    }
 </style>
 """
 
@@ -414,7 +423,7 @@ if __name__ == "__main__":
         # AI 리포트 생성
         full_text = generate_content(news_text)
         
-        # 저장 (CSS 주입됨)
+        # 저장 (강력한 CSS 주입됨)
         save_newsletter(full_text)
         
         KST = timezone(timedelta(hours=9))
