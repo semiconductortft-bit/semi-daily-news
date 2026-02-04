@@ -195,7 +195,6 @@ def generate_content(news_text):
     
     report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
 
-    # [수정] 본문 최상단 제목 삭제 (save_newsletter에서 Front Matter로 처리)
     prompt = f"""
     당신은 반도체 소재 개발 엔지니어이자 산업 분석가입니다.
     저작권법 준수를 위해 기사 내용을 요약하거나 재생산하지 마십시오.
@@ -297,7 +296,45 @@ def generate_kakao_briefing(news_text, weather_str):
     return fallback_msg
 
 # =========================================================
-# 5. 전송 및 저장 - [강력 수정: 헤더 완전 삭제 CSS]
+# 5. [신규 추가] 스타일 강제 오버라이딩 함수 (핵심)
+# =========================================================
+def apply_custom_css():
+    """
+    GitHub Pages의 기본 테마 CSS보다 우선 적용되는 커스텀 스타일 파일을 생성합니다.
+    이 함수는 'assets/css/style.scss' 파일을 생성하여 헤더를 물리적으로 숨깁니다.
+    """
+    css_path = "assets/css"
+    if not os.path.exists(css_path):
+        os.makedirs(css_path, exist_ok=True)
+    
+    # Minima 테마의 헤더(.site-header)를 강제로 숨기는 SCSS 코드
+    # YAML Front Matter (---)를 포함해야 Jekyll이 처리합니다.
+    css_content = """---
+---
+@import "minima";
+
+/* 헤더 강제 삭제 구문 */
+.site-header, header, .site-title, .project-name { 
+    display: none !important; 
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+
+/* 헤더 삭제 후 상단 여백 제거 */
+body, .page-content, .markdown-body {
+    margin-top: 0 !important;
+    padding-top: 10px !important;
+}
+"""
+    with open(f"{css_path}/style.scss", "w", encoding="utf-8") as f:
+        f.write(css_content)
+    print("✅ 강력한 스타일 제거 파일(assets/css/style.scss) 생성 완료")
+
+# =========================================================
+# 6. 전송 및 저장
 # =========================================================
 def save_newsletter(content):
     KST = timezone(timedelta(hours=9))
@@ -306,34 +343,20 @@ def save_newsletter(content):
     
     report_title = "Semi-TFT Weekly News" if now.weekday() == 0 else "Semi-TFT Daily News"
     
-    # [핵심] GitHub Pages 기본 테마의 헤더 영역을 통째로 날려버리는 강력한 CSS
-    hide_header_css = """
+    # 안전장치: Markdown 파일 내에도 CSS 주입 (이중 잠금)
+    inline_css = """
 <style>
-    /* 사이트 헤더, 제목, 프로젝트 이름 등 상단 바 영역 완전 숨김 */
-    header, .site-header, .site-title, .project-name {
-        display: none !important;
-        opacity: 0 !important;
-        height: 0 !important;
-        pointer-events: none !important;
-        visibility: hidden !important;
-    }
-    /* 헤더가 사라진 후 본문이 너무 위로 붙지 않도록 여백 조정 */
-    body, .page-content, .markdown-body {
-        margin-top: 0 !important;
-        padding-top: 20px !important;
-    }
+.site-header, .site-title { display: none !important; }
 </style>
 """
-
     front_matter = f"""---
 layout: default
 title: "{report_title} ({date_str})"
 ---
-{hide_header_css}
+{inline_css}
 
 # 📦 {report_title}
 """
-    # Front Matter + CSS + 본문 결합
     final_content = front_matter + content
 
     folder = f"newsletter/{date_str}"
@@ -404,11 +427,15 @@ def send_email(subject, body, to_email):
     except Exception as e: print(f"❌ 이메일 실패: {e}")
 
 # =========================================================
-# 6. 메인 실행 블록
+# 7. 메인 실행 블록
 # =========================================================
 if __name__ == "__main__":
     try:
         print("🚀 뉴스 큐레이션 공정 시작")
+        
+        # [중요] 실행 시 스타일 강제 덮어쓰기 수행
+        apply_custom_css()
+
         raw_data = fetch_news()
         
         if not raw_data: 
@@ -423,7 +450,7 @@ if __name__ == "__main__":
         # AI 리포트 생성
         full_text = generate_content(news_text)
         
-        # 저장 (강력한 CSS 주입됨)
+        # 저장
         save_newsletter(full_text)
         
         KST = timezone(timedelta(hours=9))
