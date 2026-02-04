@@ -296,7 +296,7 @@ def generate_kakao_briefing(news_text, weather_str):
     return fallback_msg
 
 # =========================================================
-# 5. [신규 추가] 스타일 강제 오버라이딩 함수 (핵심)
+# 5. 스타일 강제 오버라이딩 함수 (핵심)
 # =========================================================
 def apply_custom_css():
     """
@@ -313,25 +313,86 @@ def apply_custom_css():
 ---
 @import "minima";
 
-/* 헤더 강제 삭제 구문 */
-.site-header, header, .site-title, .project-name { 
+/* 헤더 강제 삭제 구문 - 모든 가능한 선택자 포함 */
+.site-header, 
+header, 
+.site-title, 
+.project-name,
+.page-header,
+.site-nav,
+a.site-title,
+.site-header .wrapper { 
     display: none !important; 
     visibility: hidden !important;
     opacity: 0 !important;
     height: 0 !important;
     overflow: hidden !important;
     pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
 /* 헤더 삭제 후 상단 여백 제거 */
-body, .page-content, .markdown-body {
+body, .page-content, .markdown-body, main {
     margin-top: 0 !important;
     padding-top: 10px !important;
+}
+
+/* 추가: 전체 페이지 상단 여백 제거 */
+.wrapper {
+    margin-top: 0 !important;
 }
 """
     with open(f"{css_path}/style.scss", "w", encoding="utf-8") as f:
         f.write(css_content)
     print("✅ 강력한 스타일 제거 파일(assets/css/style.scss) 생성 완료")
+
+def create_config_file():
+    """
+    _config.yml 파일을 생성하여 사이트 제목을 빈 값으로 설정합니다.
+    """
+    config_content = """title: ""
+description: ""
+show_downloads: false
+theme: minima
+
+# 헤더 완전 비활성화
+header_pages: []
+"""
+    with open("_config.yml", "w", encoding="utf-8") as f:
+        f.write(config_content)
+    print("✅ _config.yml 생성 완료 (사이트 제목 제거)")
+
+def create_custom_layout():
+    """
+    커스텀 레이아웃 파일을 생성하여 헤더를 물리적으로 제거합니다.
+    """
+    layout_path = "_layouts"
+    if not os.path.exists(layout_path):
+        os.makedirs(layout_path, exist_ok=True)
+    
+    # 헤더가 없는 minimal한 레이아웃
+    layout_content = """<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title | default: site.title }}</title>
+  <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
+</head>
+<body>
+  <main class="page-content" aria-label="Content">
+    <div class="wrapper">
+      {{ content }}
+    </div>
+  </main>
+</body>
+</html>
+"""
+    with open(f"{layout_path}/default.html", "w", encoding="utf-8") as f:
+        f.write(layout_content)
+    print("✅ 커스텀 레이아웃(_layouts/default.html) 생성 완료")
 
 # =========================================================
 # 6. 전송 및 저장
@@ -435,6 +496,8 @@ if __name__ == "__main__":
         
         # [중요] 실행 시 스타일 강제 덮어쓰기 수행
         apply_custom_css()
+        create_config_file()
+        create_custom_layout()
 
         raw_data = fetch_news()
         
