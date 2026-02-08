@@ -41,23 +41,29 @@ jobs:
       - name: Commit and Push changes
         shell: powershell
         run: |
-          # 1. 보안 예외 처리 (이 명령어를 반드시 가장 먼저 실행하세요)
+          # 0. PowerShell 한글 출력 인코딩 강제 설정 (UTF-8)
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          
+          # 1. 보안 예외 처리
           git config --global --add safe.directory C:/actions-runner/actions-runner/_work/semi-daily-news/semi-daily-news
           
           # 2. 사용자 설정
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           
-          # 3. 변경 사항 추가 및 커밋
-          git add .
+          # 3. 변경 사항 확인 (매우 중요)
+          # git status --porcelain은 변경 사항이 없으면 아무것도 출력하지 않습니다.
+          $changes = git status --porcelain
+          if ($null -eq $changes -or $changes -eq "") {
+              Write-Host "✅ 업데이트된 뉴스가 없거나 변경 사항이 없습니다. 공정을 종료합니다."
+              exit 0
+          }
           
+          # 4. 변경 사항 추가 및 커밋
+          git add .
           $currentDate = Get-Date -Format "yyyy-MM-dd"
-          # 커밋할 내용이 없을 때 에러가 나지 않도록 try-catch 또는 exit code 확인
           git commit -m "🚀 News Update: $currentDate"
           
-          if ($LASTEXITCODE -eq 0) {
-              Write-Host "변경 사항이 있어 푸시를 진행합니다."
-              git push
-          } else {
-              Write-Host "커밋할 변경 사항이 없습니다."
-          }
+          # 5. 푸시
+          Write-Host "📡 새로운 리포트를 서버로 전송합니다..."
+          git push origin main
