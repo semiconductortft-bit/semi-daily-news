@@ -5,6 +5,7 @@ import json
 import feedparser
 import urllib.parse
 import smtplib
+import logging
 from datetime import datetime, timedelta, timezone
 from google import genai
 from collections import defaultdict
@@ -13,6 +14,16 @@ from dateutil import parser as date_parser
 from googlenewsdecoder import gnewsdecoder
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+# =========================================================
+# 0. 로깅 설정
+# =========================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+log = logging.getLogger(__name__)
 
 # =========================================================
 # 1. 환경 설정 및 상수 정의
@@ -26,8 +37,11 @@ GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# Gemini 모델 우선순위 (공통 상수화)
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
+
 KEYWORDS = [
-    'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix', 
+    'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix',
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
     'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics',
     'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
@@ -56,15 +70,25 @@ KOREA_TARGETS = {
     "hankyung.com": "Hankyung Insight"
 }
 
+ALL_TARGETS = {**GLOBAL_TARGETS, **KOREA_TARGETS}
+
+# 날씨 코드 → 설명 매핑 (range 반복 생성 제거)
+WEATHER_CODE_MAP = {
+    0: "맑음 ☀️",
+    1: "구름 조금 ⛅", 2: "구름 조금 ⛅", 3: "구름 조금 ⛅",
+    45: "안개 🌫️", 48: "안개 🌫️",
+}
+# 51~69: 비, 70~79: 눈, 80+: 폭우/뇌우
+_RAIN_CODES = {c: "비 🌧️" for c in range(51, 70)}
+_SNOW_CODES = {c: "눈 ❄️" for c in range(70, 80)}
+WEATHER_CODE_MAP.update(_RAIN_CODES)
+WEATHER_CODE_MAP.update(_SNOW_CODES)
+
+MAX_ARTICLES = 10
+
 # =========================================================
 # 2. 유틸리티 함수
 # =========================================================
-def parse_date(date_str):
-    try:
-        return date_parser.parse(date_str)
-    except:
-        return datetime.now()
-
 def get_pm_grade(value, thresholds, labels):
     """PM 수치에 따른 등급 문자열 반환"""
     if value is None:
@@ -73,6 +97,7 @@ def get_pm_grade(value, thresholds, labels):
         if value <= threshold:
             return label
     return labels[-1]
+
 
 def get_weather_info():
     """날씨 + 미세먼지(PM2.5/PM10) 정보를 함께 반환합니다. (튜플 반환)"""
@@ -86,23 +111,21 @@ def get_weather_info():
             f"&current=temperature_2m,weather_code"
             f"&timezone=Asia%2FSeoul"
         )
-        res = requests.get(weather_url, timeout=5).json()
+        res = requests.get(weather_url, timeout=10).json()
         current = res.get('current', {})
         temp = current.get('temperature_2m', 0)
         code = current.get('weather_code', 0)
 
-        weather_desc = "맑음 ☀️"
-        if code in [1, 2, 3]:    weather_desc = "구름 조금 ⛅"
-        elif code in [45, 48]:   weather_desc = "안개 🌫️"
-        elif code in range(51, 70): weather_desc = "비 🌧️"
-        elif code in range(70, 80): weather_desc = "눈 ❄️"
-        elif code >= 80:          weather_desc = "폭우/뇌우 ⛈️"
+        weather_desc = WEATHER_CODE_MAP.get(code)
+        if weather_desc is None:
+            weather_desc = "폭우/뇌우 ⛈️" if code >= 80 else "맑음 ☀️"
 
         weather_str = f"{temp}°C, {weather_desc}"
-    except Exception:
+    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+        log.warning(f"날씨 정보 수집 실패: {e}")
         weather_str = "기온 정보 없음"
 
-    # --- 미세먼지 정보 (Open-Meteo Air Quality API - 무료, 키 불필요) ---
+    # --- 미세먼지 정보 ---
     try:
         aq_url = (
             f"https://air-quality-api.open-meteo.com/v1/air-quality"
@@ -110,32 +133,26 @@ def get_weather_info():
             f"&current=pm2_5,pm10"
             f"&timezone=Asia%2FSeoul"
         )
-        aq_res = requests.get(aq_url, timeout=5).json()
+        aq_res = requests.get(aq_url, timeout=10).json()
         aq = aq_res.get('current', {})
         pm25 = aq.get('pm2_5')
         pm10 = aq.get('pm10')
 
-        # 한국 환경부 기준 PM2.5
-        pm25_label = get_pm_grade(
-            pm25,
-            [15, 35, 75],
-            ["좋음 💚", "보통 💛", "나쁨 🟠", "매우나쁨 🔴"]
-        )
-        # 한국 환경부 기준 PM10
-        pm10_label = get_pm_grade(
-            pm10,
-            [30, 80, 150],
-            ["좋음 💚", "보통 💛", "나쁨 🟠", "매우나쁨 🔴"]
-        )
+        pm25_label = get_pm_grade(pm25, [15, 35, 75],
+                                  ["좋음 💚", "보통 💛", "나쁨 🟠", "매우나쁨 🔴"])
+        pm10_label = get_pm_grade(pm10, [30, 80, 150],
+                                  ["좋음 💚", "보통 💛", "나쁨 🟠", "매우나쁨 🔴"])
 
         pm25_str = f"{pm25:.0f}㎍/㎥ {pm25_label}" if pm25 is not None else "정보없음"
         pm10_str = f"{pm10:.0f}㎍/㎥ {pm10_label}" if pm10 is not None else "정보없음"
         dust_str = f"미세먼지(PM10): {pm10_str} | 초미세먼지(PM2.5): {pm25_str}"
 
-    except Exception:
+    except (requests.RequestException, json.JSONDecodeError, KeyError) as e:
+        log.warning(f"미세먼지 정보 수집 실패: {e}")
         dust_str = "미세먼지 정보 없음"
 
     return weather_str, dust_str
+
 
 def get_new_kakao_token():
     url = "https://kauth.kakao.com/oauth/token"
@@ -146,11 +163,40 @@ def get_new_kakao_token():
         "refresh_token": KAKAO_REFRESH_TOKEN
     }
     try:
-        res = requests.post(url, data=data)
+        res = requests.post(url, data=data, timeout=10)
+        res.raise_for_status()
         tokens = res.json()
         return tokens.get("access_token")
-    except:
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        log.error(f"카카오 토큰 갱신 실패: {e}")
         return None
+
+
+def shorten_url(long_url):
+    """TinyURL 단축. 실패 시 원본 반환."""
+    try:
+        api_url = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(long_url)}"
+        response = requests.get(api_url, timeout=5)
+        if response.status_code == 200 and response.text.startswith("http"):
+            return response.text
+    except requests.RequestException:
+        pass
+    return long_url
+
+
+def call_gemini(prompt, tag=""):
+    """Gemini 모델 fallback 호출 공통 함수. 성공 시 텍스트, 실패 시 None."""
+    for model in GEMINI_MODELS:
+        try:
+            resp = client.models.generate_content(model=model, contents=prompt)
+            if resp.text:
+                log.info(f"[{tag}] {model} 성공")
+                return resp.text
+        except Exception as e:
+            log.warning(f"[{tag}] {model} 실패: {e}")
+            time.sleep(1)
+    return None
+
 
 # =========================================================
 # 3. 뉴스 수집 및 처리
@@ -160,19 +206,19 @@ def fetch_news():
     now_kst = datetime.now(KST)
     weekday = now_kst.weekday()
 
-    if weekday == 6:
-        print("📅 일요일은 리포트를 휴간합니다.")
+    if weekday == 6:  # 일요일
+        log.info("📅 일요일은 리포트를 휴간합니다.")
         return None
 
-    search_period = "7d" if weekday == 0 else "2d"
-    cutoff_hours = 168 if weekday == 0 else 48
+    is_monday = weekday == 0
+    search_period = "7d" if is_monday else "2d"
+    cutoff_hours = 168 if is_monday else 48
     cutoff_date = datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)
 
-    all_targets = {**GLOBAL_TARGETS, **KOREA_TARGETS}
     raw_articles = []
 
     def get_rss_entries(targets, region, lang):
-        site_query = " OR ".join([f"site:{d}" for d in targets.keys()])
+        site_query = " OR ".join(f"site:{d}" for d in targets)
         kw_query = " OR ".join(KEYWORDS)
         final_query = f"({site_query}) AND ({kw_query})"
         encoded_query = urllib.parse.quote(final_query)
@@ -180,9 +226,14 @@ def fetch_news():
             f"https://news.google.com/rss/search?q={encoded_query}"
             f"+when:{search_period}&hl={lang}&gl={region}&ceid={region}:{lang}"
         )
-        return feedparser.parse(url).entries
+        try:
+            feed = feedparser.parse(url)
+            return feed.entries
+        except Exception as e:
+            log.warning(f"RSS 파싱 실패 ({region}): {e}")
+            return []
 
-    print(f"📡 뉴스 수집 중... (기간: {search_period})")
+    log.info(f"📡 뉴스 수집 중... (기간: {search_period})")
     raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
     raw_articles.extend(get_rss_entries(KOREA_TARGETS, "KR", "ko"))
 
@@ -190,30 +241,38 @@ def fetch_news():
     seen_links = set()
 
     for e in raw_articles:
-        if e.link in seen_links:
+        link = getattr(e, 'link', None)
+        if not link or link in seen_links:
+            continue
+
+        # 날짜 필터링
+        published = getattr(e, 'published', None)
+        if not published:
             continue
         try:
-            pub_date = date_parser.parse(e.published)
+            pub_date = date_parser.parse(published)
             if pub_date.tzinfo is None:
                 pub_date = pub_date.replace(tzinfo=timezone.utc)
             if pub_date < cutoff_date:
                 continue
-        except:
+        except (ValueError, OverflowError):
             continue
 
+        # Google News URL 디코딩
         try:
-            decoded_res = gnewsdecoder(e.link)
+            decoded_res = gnewsdecoder(link)
             if isinstance(decoded_res, dict):
-                original_url = decoded_res.get('decoded_url', e.link)
+                original_url = decoded_res.get('decoded_url', link)
             else:
-                original_url = decoded_res if decoded_res else e.link
-        except:
-            original_url = e.link
+                original_url = decoded_res or link
+        except Exception:
+            original_url = link
 
         original_url = str(original_url)
         domain = urlparse(original_url).netloc.replace("www.", "")
+
         source_name = "News"
-        for t_domain, t_name in all_targets.items():
+        for t_domain, t_name in ALL_TARGETS.items():
             if t_domain in domain:
                 source_name = t_name
                 break
@@ -222,35 +281,36 @@ def fetch_news():
         e['parsed_date'] = pub_date
         e['clean_url'] = original_url
         valid_articles.append(e)
-        seen_links.add(e.link)
+        seen_links.add(link)
 
-    print(f"📰 유효 기사 수집: {len(valid_articles)}개")
+    log.info(f"📰 유효 기사 수집: {len(valid_articles)}개")
+
+    if not valid_articles:
+        return None
 
     # ── 소스별로 묶기 ──
     buckets = defaultdict(list)
     for e in valid_articles:
         buckets[e['display_source']].append(e)
 
-    sources = list(buckets.keys())
-    if not sources:
-        return "최근 관련 뉴스가 없습니다."
+    # 각 소스 내 최신순 정렬
+    for src in buckets:
+        buckets[src].sort(key=lambda x: x['parsed_date'], reverse=True)
 
-    # ── 소스 다양성을 유지하며 최대 10개 선택 (라운드-로빈) ──
-    # 버그 수정: sources 리스트에서 비어있는 소스를 건너뛰도록 개선
+    # ── 라운드-로빈으로 소스 다양성 보장하며 최대 N개 선택 ──
     final_selection = []
-    idx = 0
-    while len(final_selection) < 10:
-        # 남은 기사가 있는 소스만 추려냄
-        active_sources = [s for s in sources if buckets[s]]
+    while len(final_selection) < MAX_ARTICLES:
+        active_sources = [s for s in buckets if buckets[s]]
         if not active_sources:
             break
-        src = active_sources[idx % len(active_sources)]
-        final_selection.append(buckets[src].pop(0))
-        idx += 1
+        # 매 라운드마다 남은 소스를 순회
+        for src in active_sources:
+            if len(final_selection) >= MAX_ARTICLES:
+                break
+            final_selection.append(buckets[src].pop(0))
 
     final_selection.sort(key=lambda x: x['parsed_date'], reverse=True)
-
-    print(f"✅ 최종 선정 기사: {len(final_selection)}개")
+    log.info(f"✅ 최종 선정 기사: {len(final_selection)}개")
 
     formatted_text = []
     for i, e in enumerate(final_selection):
@@ -263,19 +323,17 @@ def fetch_news():
 
     return "\n".join(formatted_text)
 
+
 # =========================================================
 # 4. 콘텐츠 생성 (Gemini)
 # =========================================================
 def generate_content(news_text):
-    print("🤖 AI 전체 리포트 작성 중... (Safe Mode + Material Insight)")
+    log.info("🤖 AI 전체 리포트 작성 중...")
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     today_date = now_kst.strftime("%Y년 %m월 %d일")
     publisher = "반도체재료개발TFT 김동휘"
 
-    report_title = "Semi-TFT Weekly News" if now_kst.weekday() == 0 else "Semi-TFT Daily News"
-
-    # 뉴스 기사 수 파악 (프롬프트에 명시)
     article_count = news_text.count("[")
     article_count_str = f"정확히 {article_count}개" if article_count > 0 else "10개"
 
@@ -319,28 +377,19 @@ def generate_content(news_text):
     {news_text}
     """
 
-    models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
-    for m in models:
-        try:
-            resp = client.models.generate_content(model=m, contents=prompt)
-            if resp.text:
-                return resp.text
-        except:
-            continue
-    return "리포트 생성 실패"
+    result = call_gemini(prompt, tag="리포트")
+    return result or "리포트 생성 실패"
+
 
 def generate_kakao_briefing(news_text, weather_str, dust_str):
     """카카오톡 브리핑 생성. 날씨 + 미세먼지 + 행복 멘트 포함."""
-    print("💬 카카오톡 브리핑 생성 시도...")
+    log.info("💬 카카오톡 브리핑 생성 시도...")
     KST = timezone(timedelta(hours=9))
     now_kst = datetime.now(KST)
     today_str = now_kst.strftime("%m-%d")
 
-    # 뉴스 기사 수 파악
     article_count = news_text.count("[")
     article_count_str = str(article_count) if article_count > 0 else "10"
-
-    models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
 
     prompt = f"""
     당신은 따뜻하고 활기찬 테크 뉴스 알리미입니다.
@@ -375,55 +424,55 @@ def generate_kakao_briefing(news_text, weather_str, dust_str):
     {news_text}
     """
 
-    for model_name in models:
-        try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
-            if response.text:
-                return response.text
-        except Exception:
-            time.sleep(1)
-            continue
+    result = call_gemini(prompt, tag="카카오 브리핑")
+    if result:
+        return result
 
     # ── Fallback: AI 실패 시 수동 조합 ──
-    titles = []
-    for line in news_text.split('\n'):
-        if line.startswith("Title:"):
-            titles.append(line.replace("Title:", "").strip())
+    log.warning("AI 브리핑 전체 실패 → fallback 메시지 생성")
+    titles = [
+        line.replace("Title:", "").strip()
+        for line in news_text.split('\n')
+        if line.strip().startswith("Title:")
+    ]
 
-    fallback_msg = (
-        f"🌤️ {weather_str}\n"
-        f"🍃 {dust_str}\n\n"
-        f"오늘도 건강하고 활기차게! 좋은 하루 되세요 😊\n"
-        f"---\n"
-        f"🚀 오늘의 반도체 헤드라인 ({today_str})\n\n"
-        f"(AI 서비스 지연으로 제목만 전송합니다)\n"
-    )
-    for i, t in enumerate(titles[:10]):
-        fallback_msg += f"{i+1}. {t}\n"
-    fallback_msg += "\n---\n📌 상세 내용은 리포트를 확인해주세요."
-    return fallback_msg
+    lines = [
+        f"🌤️ {weather_str}",
+        f"🍃 {dust_str}",
+        "",
+        "오늘도 건강하고 활기차게! 좋은 하루 되세요 😊",
+        "---",
+        f"🚀 오늘의 반도체 헤드라인 ({today_str})",
+        "",
+        "(AI 서비스 지연으로 제목만 전송합니다)",
+    ]
+    for i, t in enumerate(titles[:MAX_ARTICLES]):
+        lines.append(f"{i+1}. {t}")
+    lines.append("\n---\n📌 상세 내용은 리포트를 확인해주세요.")
+
+    return "\n".join(lines)
+
 
 # =========================================================
-# 5. 스타일 강제 오버라이딩 함수 (핵심)
+# 5. 스타일 강제 오버라이딩 함수 (GitHub Pages)
 # =========================================================
 def apply_custom_css():
     css_path = "assets/css"
-    if not os.path.exists(css_path):
-        os.makedirs(css_path, exist_ok=True)
-    
+    os.makedirs(css_path, exist_ok=True)
+
     css_content = """---
 ---
 @import "minima";
 
-.site-header, 
-header, 
-.site-title, 
+.site-header,
+header,
+.site-title,
 .project-name,
 .page-header,
 .site-nav,
 a.site-title,
-.site-header .wrapper { 
-    display: none !important; 
+.site-header .wrapper {
+    display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     height: 0 !important;
@@ -444,7 +493,8 @@ body, .page-content, .markdown-body, main {
 """
     with open(f"{css_path}/style.scss", "w", encoding="utf-8") as f:
         f.write(css_content)
-    print("✅ 강력한 스타일 제거 파일(assets/css/style.scss) 생성 완료")
+    log.info("✅ style.scss 생성 완료")
+
 
 def create_config_file():
     config_content = """title: ""
@@ -455,13 +505,13 @@ header_pages: []
 """
     with open("_config.yml", "w", encoding="utf-8") as f:
         f.write(config_content)
-    print("✅ _config.yml 생성 완료 (사이트 제목 제거)")
+    log.info("✅ _config.yml 생성 완료")
+
 
 def create_custom_layout():
     layout_path = "_layouts"
-    if not os.path.exists(layout_path):
-        os.makedirs(layout_path, exist_ok=True)
-    
+    os.makedirs(layout_path, exist_ok=True)
+
     layout_content = """<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -482,7 +532,8 @@ def create_custom_layout():
 """
     with open(f"{layout_path}/default.html", "w", encoding="utf-8") as f:
         f.write(layout_content)
-    print("✅ 커스텀 레이아웃(_layouts/default.html) 생성 완료")
+    log.info("✅ 커스텀 레이아웃 생성 완료")
+
 
 # =========================================================
 # 6. 전송 및 저장
@@ -491,9 +542,9 @@ def save_newsletter(content):
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
     date_str = now.strftime("%Y-%m-%d")
-    
+
     report_title = "Semi-TFT Weekly News" if now.weekday() == 0 else "Semi-TFT Daily News"
-    
+
     inline_css = """
 <style>
 .site-header, .site-title { display: none !important; }
@@ -510,8 +561,7 @@ title: "{report_title} ({date_str})"
     final_content = front_matter + content
 
     folder = f"newsletter/{date_str}"
-    if not os.path.exists(folder):
-        os.makedirs(folder, exist_ok=True)
+    os.makedirs(folder, exist_ok=True)
 
     with open(f"{folder}/index.md", "w", encoding="utf-8") as f:
         f.write(final_content)
@@ -519,24 +569,16 @@ title: "{report_title} ({date_str})"
     with open("index.md", "w", encoding="utf-8") as f:
         f.write(final_content)
 
-    print(f"✅ 리포트 저장 완료: {folder}/index.md")
+    log.info(f"✅ 리포트 저장 완료: {folder}/index.md")
+
 
 def send_kakao_message(briefing_text, report_url):
     access_token = get_new_kakao_token()
     if not access_token:
-        print("❌ 카카오 토큰 갱신 실패")
+        log.error("❌ 카카오 토큰 갱신 실패")
         return
 
-    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-
-    try:
-        short_url = shorten_url(report_url)
-    except:
-        short_url = report_url
+    short_url = shorten_url(report_url)
 
     header = "📦 김동휘입니다."
     footer = f"\n\n🔗 {short_url}"
@@ -565,94 +607,108 @@ def send_kakao_message(briefing_text, report_url):
         ]
     }
 
+    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
     try:
-        res = requests.post(url, headers=headers, data={"template_object": json.dumps(template)})
+        res = requests.post(url, headers=headers,
+                            data={"template_object": json.dumps(template)},
+                            timeout=10)
         if res.status_code == 200:
-            print("✅ 카카오톡 전송 성공")
+            log.info("✅ 카카오톡 전송 성공")
         else:
-            print(f"❌ 카카오톡 전송 실패: {res.text}")
-    except Exception as e:
-        print(f"❌ 카카오톡 전송 에러: {e}")
+            log.error(f"❌ 카카오톡 전송 실패 ({res.status_code}): {res.text}")
+    except requests.RequestException as e:
+        log.error(f"❌ 카카오톡 전송 에러: {e}")
 
-def shorten_url(long_url):
-    try:
-        api_url = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(long_url)}"
-        response = requests.get(api_url, timeout=5)
-        if response.status_code == 200:
-            return response.text
-    except:
-        pass
-    return long_url
 
-def send_email(subject, body, to_email):
+def send_email(subject, body_md, to_email):
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        print("⚠️ 이메일 설정 누락으로 전송 건너뜀")
+        log.warning("⚠️ 이메일 설정 누락으로 전송 건너뜀")
         return
 
-    msg = MIMEMultipart()
+    # 마크다운 → 간단 HTML 변환 (줄바꿈 + 기본 래핑)
+    html_body = (
+        "<html><body style='font-family:sans-serif; line-height:1.6;'>"
+        + body_md.replace("\n", "<br>")
+        + "</body></html>"
+    )
+
+    msg = MIMEMultipart("alternative")
     msg['From'] = GMAIL_USER
     msg['To'] = to_email
     msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'html'))
+    msg.attach(MIMEText(body_md, 'plain', 'utf-8'))   # 플레인 텍스트 fallback
+    msg.attach(MIMEText(html_body, 'html', 'utf-8'))   # HTML 본문
+
     try:
-        s = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-        s.send_message(msg)
-        s.quit()
-        print("📧 이메일 전송 성공")
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=15) as s:
+            s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            s.send_message(msg)
+        log.info("📧 이메일 전송 성공")
     except Exception as e:
-        print(f"❌ 이메일 실패: {e}")
+        log.error(f"❌ 이메일 실패: {e}")
+
 
 # =========================================================
 # 7. 메인 실행 블록
 # =========================================================
+def main():
+    log.info("🚀 뉴스 큐레이션 공정 시작")
+
+    # GitHub Pages 스타일 파일 생성
+    apply_custom_css()
+    create_config_file()
+    create_custom_layout()
+
+    # 뉴스 수집
+    news_text = fetch_news()
+    if not news_text:
+        log.info("뉴스 없음 또는 휴간일 → 종료")
+        return
+
+    # AI 리포트 생성
+    full_text = generate_content(news_text)
+    if full_text == "리포트 생성 실패":
+        log.error("❌ 리포트 생성 실패 - 종료")
+        raise SystemExit(1)
+
+    save_newsletter(full_text)
+
+    KST = timezone(timedelta(hours=9))
+    date_str = datetime.now(KST).strftime("%Y-%m-%d")
+    web_url = "https://semiconductortft-bit.github.io/semi-daily-news/"
+
+    # API Rate Limit 보호 대기
+    log.info("☕ API 보호 대기 (60초)...")
+    time.sleep(60)
+
+    # 날씨 + 미세먼지 정보 수집
+    weather_str, dust_str = get_weather_info()
+    log.info(f"🌤️ {weather_str} | {dust_str}")
+
+    # 카카오톡 전송
+    kakao_msg = generate_kakao_briefing(news_text, weather_str, dust_str)
+    send_kakao_message(kakao_msg, web_url)
+
+    # 이메일 전송
+    send_email(
+        f"📦 [반도체 뉴스] {date_str}",
+        full_text,
+        "keenhwi@gmail.com"
+    )
+
+    log.info("✅ 모든 공정 완료")
+
+
 if __name__ == "__main__":
     try:
-        print("🚀 뉴스 큐레이션 공정 시작")
-
-        apply_custom_css()
-        create_config_file()
-        create_custom_layout()
-
-        raw_data = fetch_news()
-
-        if not raw_data:
-            print("뉴스 없음 종료")
-            exit(0)
-
-        if isinstance(raw_data, list):
-            news_text = "\n".join([f"Title: {e.title}" for e in raw_data])
-        else:
-            news_text = raw_data
-
-        # AI 리포트 생성
-        full_text = generate_content(news_text)
-
-        if not full_text or full_text == "리포트 생성 실패":
-            print("❌ 리포트 생성 실패 - 종료")
-            exit(1)
-
-        save_newsletter(full_text)
-
-        KST = timezone(timedelta(hours=9))
-        date_str = datetime.now(KST).strftime("%Y-%m-%d")
-        web_url = "https://semiconductortft-bit.github.io/semi-daily-news/"
-
-        print("☕ API 보호 대기 (60초)...")
-        time.sleep(60)
-
-        # ── 날씨 + 미세먼지 정보 수집 (튜플 언패킹) ──
-        weather_str, dust_str = get_weather_info()
-        print(f"🌤️ {weather_str} | {dust_str}")
-
-        kakao_msg = generate_kakao_briefing(news_text, weather_str, dust_str)
-        send_kakao_message(kakao_msg, web_url)
-
-        send_email(f"📦 [반도체 뉴스] {date_str}", full_text.replace("\n", "<br>"), "keenhwi@gmail.com")
-
-        print("✅ 모든 공정 완료")
-
+        main()
+    except SystemExit:
+        raise
     except Exception as e:
-        print(f"⚠️ 시스템 치명적 에러: {e}")
-        import traceback
-        traceback.print_exc()
+        log.critical(f"⚠️ 시스템 치명적 에러: {e}", exc_info=True)
+        raise SystemExit(1)
