@@ -172,18 +172,6 @@ def get_new_kakao_token():
         return None
 
 
-def shorten_url(long_url):
-    """TinyURL 단축. 실패 시 원본 반환."""
-    try:
-        api_url = f"https://tinyurl.com/api-create.php?url={urllib.parse.quote(long_url)}"
-        response = requests.get(api_url, timeout=5)
-        if response.status_code == 200 and response.text.startswith("http"):
-            return response.text
-    except requests.RequestException:
-        pass
-    return long_url
-
-
 def call_gemini(prompt, tag=""):
     """Gemini 모델 fallback 호출 공통 함수. 성공 시 텍스트, 실패 시 None."""
     for model in GEMINI_MODELS:
@@ -402,21 +390,21 @@ def generate_kakao_briefing(news_text, weather_str, dust_str):
 
     [형식 - 반드시 아래 형식을 그대로 따르세요]
 
-    (첫 줄) 날씨 이모지 + 날씨 정보 한 줄 표기 (예: ☀️ 맑음, 기온 등 포함)
-    (둘째 줄) 미세먼지 정보 한 줄 표기 (PM10 등급과 PM2.5 등급을 이모지와 함께)
-    (셋째 줄) 빈 줄
-    (넷째 줄) 날씨와 미세먼지 상태에 맞는 따뜻하고 행복을 비는 기분 좋은 인사말 1~2문장.
-    (예: 미세먼지가 좋은 날이면 "오늘은 바깥 공기도 맑으니 잠깐 산책도 어떨까요? 활기찬 하루 되세요! 😊")
-    (예: 미세먼지가 나쁜 날이면 "오늘은 마스크 꼭 챙기세요! 건강하고 행복한 하루 보내시길 바랍니다 💪")
-    ---
-    🚀 오늘의 반도체 헤드라인 ({today_str})
-
+    (첫 줄) 🚀 오늘의 반도체 헤드라인 ({today_str})
+    (빈 줄)
     (뉴스 데이터에 있는 기사 제목을 {article_count_str}개 전부 나열 - 생략 없이)
     1. (제목) - (매체명)
     2. (제목) - (매체명)
     ...
     {article_count_str}. (제목) - (매체명)
 
+    ---
+    (날씨 이모지 + 날씨 정보 한 줄 표기 (예: ☀️ 맑음, 기온 등 포함))
+    (미세먼지 정보 한 줄 표기 (PM10 등급과 PM2.5 등급을 이모지와 함께))
+    (빈 줄)
+    (날씨와 미세먼지 상태에 맞는 따뜻하고 행복을 비는 기분 좋은 인사말 1~2문장.)
+    (예: 미세먼지가 좋은 날이면 "오늘은 바깥 공기도 맑으니 잠깐 산책도 어떨까요? 활기찬 하루 되세요! 😊")
+    (예: 미세먼지가 나쁜 날이면 "오늘은 마스크 꼭 챙기세요! 건강하고 행복한 하루 보내시길 바랍니다 💪")
     ---
     📌 원문 링크는 아래 버튼을 눌러 리포트를 확인해주세요.
 
@@ -437,18 +425,20 @@ def generate_kakao_briefing(news_text, weather_str, dust_str):
     ]
 
     lines = [
-        f"🌤️ {weather_str}",
-        f"🍃 {dust_str}",
-        "",
-        "오늘도 건강하고 활기차게! 좋은 하루 되세요 😊",
-        "---",
         f"🚀 오늘의 반도체 헤드라인 ({today_str})",
         "",
         "(AI 서비스 지연으로 제목만 전송합니다)",
     ]
     for i, t in enumerate(titles[:MAX_ARTICLES]):
         lines.append(f"{i+1}. {t}")
-    lines.append("\n---\n📌 상세 내용은 리포트를 확인해주세요.")
+    lines.append("")
+    lines.append("---")
+    lines.append(f"🌤️ {weather_str}")
+    lines.append(f"🍃 {dust_str}")
+    lines.append("")
+    lines.append("오늘도 건강하고 활기차게! 좋은 하루 되세요 😊")
+    lines.append("---")
+    lines.append("📌 상세 내용은 리포트를 확인해주세요.")
 
     return "\n".join(lines)
 
@@ -578,22 +568,16 @@ def send_kakao_message(briefing_text, report_url):
         log.error("❌ 카카오 토큰 갱신 실패")
         return
 
-    short_url = shorten_url(report_url)
-
-    header = "📦 김동휘입니다."
-    footer = f"\n\n🔗 {short_url}"
+    # 헤더 없이 브리핑(🚀 헤드라인)이 바로 첫 줄에 표시
+    # TinyURL 제거 → 원본 URL 직접 사용 (Preview 대기 페이지 없음)
     suffix = "\n...(더보기)"
-
     MAX_LEN = 950
-    fixed_len = len(header) + len("\n\n") + len(footer)
-    max_body = MAX_LEN - fixed_len - len(suffix)
+    max_body = MAX_LEN - len(suffix)
 
     if len(briefing_text) > max_body:
-        safe_text = briefing_text[:max_body] + suffix
+        final_text = briefing_text[:max_body] + suffix
     else:
-        safe_text = briefing_text
-
-    final_text = f"{header}\n\n{safe_text}{footer}"
+        final_text = briefing_text
 
     template = {
         "object_type": "text",
