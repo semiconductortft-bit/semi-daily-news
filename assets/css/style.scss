@@ -2,16 +2,15 @@
 ---
 @import "minima";
 
-/* 헤더 강제 삭제 구문 - 모든 가능한 선택자 포함 */
-.site-header, 
-header, 
-.site-title, 
+.site-header,
+header,
+.site-title,
 .project-name,
 .page-header,
 .site-nav,
 a.site-title,
-.site-header .wrapper { 
-    display: none !important; 
+.site-header .wrapper {
+    display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     height: 0 !important;
@@ -21,13 +20,11 @@ a.site-title,
     padding: 0 !important;
 }
 
-/* 헤더 삭제 후 상단 여백 제거 */
 body, .page-content, .markdown-body, main {
     margin-top: 0 !important;
     padding-top: 10px !important;
 }
 
-/* 추가: 전체 페이지 상단 여백 제거 */
 .wrapper {
     margin-top: 0 !important;
 }
