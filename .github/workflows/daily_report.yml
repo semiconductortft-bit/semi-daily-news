@@ -5,14 +5,17 @@ on:
     - cron: '30 21 * * *'  # 🌍 한국 시간(KST) 다음날 06:30
   workflow_dispatch:      # 수동 실행 버튼 활성화
 
-jobs:
-  build:             # (스페이스 2칸)
-    runs-on: self-hosted
-    env:             # (스페이스 4칸) build 바로 아래에 위치
-      PYTHONIOENCODING: utf-8
-    permissions:     # (스페이스 4칸)
-      contents: write
+concurrency:
+  group: news-update
+  cancel-in-progress: false
 
+jobs:
+  build:
+    runs-on: self-hosted
+    env:
+      PYTHONIOENCODING: utf-8
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v3
 
@@ -45,28 +48,25 @@ jobs:
           $OutputEncoding = [System.Text.Encoding]::UTF8
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
-
           # 2. Git 한글 설정 추가
           git config --global core.quotepath false
           git config --global i18n.logOutputEncoding utf-8
           git config --global i18n.commitEncoding utf-8
-
           # 3. 보안 예외 및 사용자 설정
           git config --global --add safe.directory C:/actions-runner/actions-runner/_work/semi-daily-news/semi-daily-news
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-
           # 4. 변경 사항 확인
           $changes = git status --porcelain
           if (-not $changes) {
               Write-Host "No changes detected. Finishing process."
-              # 한글이 깨질 경우를 대비해 영어 로그도 병행 출력하세요.
               Write-Host "업데이트된 뉴스가 없거나 변경 사항이 없습니다. 공정을 종료합니다."
               exit 0
           }
-
           # 5. 변경 사항 추가 및 커밋
           git add .
           $currentDate = Get-Date -Format "yyyy-MM-dd"
           git commit -m "🚀 News Update: $currentDate"
+          # 6. 원격 변경사항 먼저 가져온 후 push (non-fast-forward 방지)
+          git pull origin main --rebase
           git push origin main
