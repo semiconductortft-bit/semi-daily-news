@@ -231,6 +231,13 @@ def fetch_news():
         except Exception as e:
             log.warning(f"RSS 파싱 실패 ({region}): {e}")
             return []
+# 이게 없으면 구글RSS가 제외 쿼리를 무시할 때 그냥 통과됨
+    def is_relevant_entry(entry):
+        text = entry.get("title", "") + entry.get("summary", "")
+        for kw in EXCLUDE_KEYWORDS:
+            if kw in text:
+                return False
+        return True
 
     log.info(f"📡 뉴스 수집 중... (기간: {search_period})")
     raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
