@@ -46,7 +46,15 @@ KEYWORDS = [
     'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics',
     'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
 ]
-
+# 제외할 키워드 목록
+EXCLUDE_KEYWORDS = [
+    "부동산", "아파트", "분양", "임대", "전세", "매매",
+    "반려동물", "강아지", "고양이", "펫",
+    "주식", "코인", "암호화폐", "비트코인",
+    "여행", "맛집", "레시피", "요리",
+    "패션", "뷰티", "화장품",
+    "육아", "임신", "출산",
+]
 GLOBAL_TARGETS = {
     "semiengineering.com": "Semiconductor Engineering",
     "3dincites.com": "3D InCites",
@@ -208,6 +216,9 @@ def fetch_news():
     def get_rss_entries(targets, region, lang):
         site_query = " OR ".join(f"site:{d}" for d in targets)
         kw_query = " OR ".join(KEYWORDS)
+        # ✅ 제외 키워드를 -"키워드" 형식으로 결합
+        exclude_query = " ".join(f'-"{kw}"' for kw in EXCLUDE_KEYWORDS)
+    
         final_query = f"({site_query}) AND ({kw_query})"
         encoded_query = urllib.parse.quote(final_query)
         url = (
