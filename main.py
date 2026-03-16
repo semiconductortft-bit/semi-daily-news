@@ -219,7 +219,7 @@ def fetch_news():
         # ✅ 제외 키워드를 -"키워드" 형식으로 결합
         exclude_query = " ".join(f'-"{kw}"' for kw in EXCLUDE_KEYWORDS)
     
-        final_query = f"({site_query}) AND ({kw_query})"
+        final_query = f"({site_query}) AND ({kw_query}) {exclude_query}"
         encoded_query = urllib.parse.quote(final_query)
         url = (
             f"https://news.google.com/rss/search?q={encoded_query}"
