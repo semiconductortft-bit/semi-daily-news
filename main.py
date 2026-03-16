@@ -205,15 +205,6 @@ def fetch_news():
     now_kst = datetime.now(KST)
     weekday = now_kst.weekday()
 
-    for e in raw_articles:
-        link = getattr(e, 'link', None)
-        if not link or link in seen_links:
-            continue
-
-    # ✅ 여기 추가
-    if not is_relevant_entry(e):
-        continue
-
     # 날짜 필터링 (기존 코드 이어서...)
     published = getattr(e, 'published', None)
 
@@ -249,11 +240,11 @@ def fetch_news():
             return []
     def is_relevant_entry(entry):
         text = (entry.get("title", "") + " " + entry.get("summary", "")).lower()
-    
-        # ① 제외 키워드 있으면 탈락
         for kw in EXCLUDE_KEYWORDS:
             if kw in text:
                 return False
+        # ✅ 반도체 키워드 최소 1개 포함 여부 확인
+        return any(kw.lower() in text for kw in KEYWORDS)
     
     # ② 반도체 키워드 하나도 없으면 탈락 ← 이게 핵심 추가
     matched = any(kw.lower() in text for kw in KEYWORDS)
@@ -274,6 +265,10 @@ def fetch_news():
     for e in raw_articles:
         link = getattr(e, 'link', None)
         if not link or link in seen_links:
+            continue
+
+        # ✅ 관련성 필터 (반도체 키워드 없으면 제외)
+        if not is_relevant_entry(e):
             continue
 
         # 날짜 필터링
