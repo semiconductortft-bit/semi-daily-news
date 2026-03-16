@@ -45,6 +45,9 @@ KEYWORDS = [
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
     'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics',
     'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
+# ✅ 한국어 추가
+    '반도체', '웨이퍼', '파운드리', '패키징', '칩', '전력반도체',
+    '낸드', '디램', '하이닉스', '삼성전자', '인텔', '엔비디아'
 ]
 # 제외할 키워드 목록
 EXCLUDE_KEYWORDS = [
@@ -202,6 +205,19 @@ def fetch_news():
     now_kst = datetime.now(KST)
     weekday = now_kst.weekday()
 
+    for e in raw_articles:
+        link = getattr(e, 'link', None)
+        if not link or link in seen_links:
+            continue
+
+    # ✅ 여기 추가
+    if not is_relevant_entry(e):
+        continue
+
+    # 날짜 필터링 (기존 코드 이어서...)
+    published = getattr(e, 'published', None)
+
+
     if weekday == 6:  # 일요일
         log.info("📅 일요일은 리포트를 휴간합니다.")
         return None
@@ -231,13 +247,22 @@ def fetch_news():
         except Exception as e:
             log.warning(f"RSS 파싱 실패 ({region}): {e}")
             return []
-# 이게 없으면 구글RSS가 제외 쿼리를 무시할 때 그냥 통과됨
     def is_relevant_entry(entry):
-        text = entry.get("title", "") + entry.get("summary", "")
+        text = (entry.get("title", "") + " " + entry.get("summary", "")).lower()
+    
+        # ① 제외 키워드 있으면 탈락
         for kw in EXCLUDE_KEYWORDS:
             if kw in text:
                 return False
-        return True
+    
+    # ② 반도체 키워드 하나도 없으면 탈락 ← 이게 핵심 추가
+    matched = any(kw.lower() in text for kw in KEYWORDS)
+    if not matched:
+        log.debug(f"[필터아웃] 관련 키워드 없음: {entry.get('title', '')[:40]}")
+        return False
+    
+    return True
+
 
     log.info(f"📡 뉴스 수집 중... (기간: {search_period})")
     raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
