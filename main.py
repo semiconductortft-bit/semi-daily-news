@@ -222,7 +222,7 @@ def fetch_news():
 
     if weekday == 6:  # 일요일
         log.info("📅 일요일은 리포트를 휴간합니다.")
-        return None
+        return None, set()
 
     is_monday = weekday == 0
     search_period = "7d" if is_monday else "2d"
@@ -314,7 +314,7 @@ def fetch_news():
     log.info(f"📰 유효 기사 수집: {len(valid_articles)}개")
 
     if not valid_articles:
-        return None
+        return None, set()
 
     # ── 소스별로 묶기 ──
     buckets = defaultdict(list)
@@ -341,6 +341,7 @@ def fetch_news():
     log.info(f"✅ 최종 선정 기사: {len(final_selection)}개")
 
     formatted_text = []
+    valid_urls = set()
     for i, e in enumerate(final_selection):
         item = (
             f"[{i+1}] Source: {e['display_source']}\n"
@@ -348,12 +349,85 @@ def fetch_news():
             f"URL: {e['clean_url']}\n"
         )
         formatted_text.append(item)
+        valid_urls.add(e['clean_url'])
 
-    return "\n".join(formatted_text)
+    return "\n".join(formatted_text), valid_urls
 
 
 # =========================================================
-# 4. 콘텐츠 생성 (Gemini)
+# 4. 생성 결과 URL 검증
+# =========================================================
+def _normalize_url(url):
+    """URL 비교용 정규화: 스킴·www 제거, 쿼리·프래그먼트 제거."""
+    p = urlparse(url)
+    netloc = p.netloc.replace("www.", "")
+    path = p.path.rstrip("/")
+    return f"{netloc}{path}"
+
+
+def validate_report(content, valid_urls):
+    """Headlines 섹션에서 실제 수집한 URL에 없는 hallucination 기사 제거.
+
+    판정 기준 (우선순위 순):
+    1. 정규화 URL 완전 일치 → 유지
+    2. 도메인이 valid_urls 목록에 없음 → 제거 (타 사이트 hallucination)
+    3. 도메인은 일치하지만 URL 경로가 다름 → 제거 (같은 사이트 다른 기사 hallucination)
+    """
+    import re
+
+    if not valid_urls:
+        return content
+
+    normalized_valid = {_normalize_url(u) for u in valid_urls}
+    valid_domains = {urlparse(u).netloc.replace("www.", "") for u in valid_urls}
+
+    headlines_match = re.search(
+        r'(🌍 \*\*Headlines & Links\*\*.*?)(\n📚|\n🧪|\n---|\Z)',
+        content, re.DOTALL
+    )
+    if not headlines_match:
+        return content
+
+    section = headlines_match.group(1)
+    suffix = headlines_match.group(2)
+
+    parts = re.split(r'(?=\n\d+\. \*\*)', section)
+    header = parts[0]
+    items = parts[1:]
+
+    kept, removed = [], 0
+    for item in items:
+        urls_in_item = re.findall(r'\(https?://[^)]+\)', item)
+        if not urls_in_item:
+            kept.append(item)
+            continue
+
+        item_url = urls_in_item[0].strip('()')
+        item_norm = _normalize_url(item_url)
+        item_domain = urlparse(item_url).netloc.replace("www.", "")
+
+        if item_norm in normalized_valid:
+            kept.append(item)  # ① 완전 일치 → 정상
+        elif not any(vd in item_domain or item_domain in vd for vd in valid_domains):
+            removed += 1
+            log.warning(f"[검증] 제거 (도메인 불일치): {item_domain} | {item_url[:80]}")
+        else:
+            removed += 1
+            log.warning(f"[검증] 제거 (같은 도메인 다른 기사): {item_url[:80]}")
+
+    if removed:
+        def renumber(item, n):
+            return re.sub(r'^\n\d+\.', f'\n{n}.', item)
+        kept = [renumber(item, i + 1) for i, item in enumerate(kept)]
+        log.info(f"[검증] 허위 기사 {removed}개 제거 → {len(kept)}개 유지")
+
+    new_section = header + "".join(kept)
+    start, end = headlines_match.start(), headlines_match.end()
+    return content[:start] + new_section + suffix + content[end:]
+
+
+# =========================================================
+# 5. 콘텐츠 생성 (Gemini)
 # =========================================================
 def generate_content(news_text):
     log.info("🤖 AI 전체 리포트 작성 중...")
@@ -487,7 +561,7 @@ def generate_kakao_briefing(news_text, weather_str, dust_str):
 
 
 # =========================================================
-# 5. 스타일 강제 오버라이딩 함수 (GitHub Pages)
+# 6. 스타일 강제 오버라이딩 함수 (GitHub Pages)
 # =========================================================
 def apply_custom_css():
     css_path = "assets/css"
@@ -569,7 +643,7 @@ def create_custom_layout():
 
 
 # =========================================================
-# 6. 전송 및 저장
+# 7. 전송 및 저장
 # =========================================================
 def save_newsletter(content):
     KST = timezone(timedelta(hours=9))
@@ -683,7 +757,7 @@ def send_email(subject, body_md, to_email):
 
 
 # =========================================================
-# 7. 메인 실행 블록
+# 8. 메인 실행 블록
 # =========================================================
 def main():
     log.info("🚀 뉴스 큐레이션 공정 시작")
@@ -694,7 +768,7 @@ def main():
     create_custom_layout()
 
     # 뉴스 수집
-    news_text = fetch_news()
+    news_text, valid_urls = fetch_news()
     if not news_text:
         log.info("뉴스 없음 또는 휴간일 → 종료")
         return
@@ -704,6 +778,9 @@ def main():
     if full_text == "리포트 생성 실패":
         log.error("❌ 리포트 생성 실패 - 종료")
         raise SystemExit(1)
+
+    # Hallucination 검증: 수집하지 않은 URL 기사 제거
+    full_text = validate_report(full_text, valid_urls)
 
     save_newsletter(full_text)
 
