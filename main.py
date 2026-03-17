@@ -247,23 +247,30 @@ def fetch_news():
     raw_articles = []
 
     def get_rss_entries(targets, region, lang):
-        site_query = " OR ".join(f"site:{d}" for d in targets)
+        """사이트를 BATCH_SIZE개씩 나눠 쿼리 — URL 길이 초과 방지."""
+        BATCH_SIZE = 6
         kw_query = " OR ".join(KEYWORDS)
-        # ✅ 제외 키워드를 -"키워드" 형식으로 결합
-        exclude_query = " ".join(f'-"{kw}"' for kw in EXCLUDE_KEYWORDS)
-    
-        final_query = f"({site_query}) AND ({kw_query}) {exclude_query}"
-        encoded_query = urllib.parse.quote(final_query)
-        url = (
-            f"https://news.google.com/rss/search?q={encoded_query}"
-            f"+when:{search_period}&hl={lang}&gl={region}&ceid={region}:{lang}"
-        )
-        try:
-            feed = feedparser.parse(url)
-            return feed.entries
-        except Exception as e:
-            log.warning(f"RSS 파싱 실패 ({region}): {e}")
-            return []
+        all_entries = []
+
+        items = list(targets.keys())
+        for i in range(0, len(items), BATCH_SIZE):
+            batch = items[i:i + BATCH_SIZE]
+            site_query = " OR ".join(f"site:{d}" for d in batch)
+            # exclude_query는 URL 길이 절감을 위해 제거 (is_relevant_entry에서 후처리)
+            final_query = f"({site_query}) AND ({kw_query})"
+            encoded_query = urllib.parse.quote(final_query)
+            url = (
+                f"https://news.google.com/rss/search?q={encoded_query}"
+                f"+when:{search_period}&hl={lang}&gl={region}&ceid={region}:{lang}"
+            )
+            try:
+                feed = feedparser.parse(url)
+                all_entries.extend(feed.entries)
+                log.info(f"  RSS 배치 {i//BATCH_SIZE+1} ({region}): {len(feed.entries)}개")
+            except Exception as e:
+                log.warning(f"RSS 파싱 실패 ({region}, 배치 {i//BATCH_SIZE+1}): {e}")
+
+        return all_entries
     def is_relevant_entry(entry):
         title = entry.get("title", "").lower()
         full_text = (title + " " + entry.get("summary", "")).lower()
