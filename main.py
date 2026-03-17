@@ -44,19 +44,34 @@ KEYWORDS = [
     'semiconductor', 'advanced packaging', 'hbm', 'tsmc', 'samsung', 'sk hynix',
     'wafer', 'chiplet', 'interposer', 'Hybrid Bonding', 'CoWoS', 'FOWLP', 'intel',
     'Glass Substrate', 'TC-NCF', 'MUF', 'EMC', 'CXL', 'BSPDN', 'Silicon Photonics',
-    'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD'
-# ✅ 한국어 추가
+    'Logic Semiconductor', 'Foundry', 'Automotive Chip', 'NVIDIA', 'AMD',
+    # 한국어
     '반도체', '웨이퍼', '파운드리', '패키징', '칩', '전력반도체',
     '낸드', '디램', '하이닉스', '삼성전자', '인텔', '엔비디아'
 ]
 # 제외할 키워드 목록
 EXCLUDE_KEYWORDS = [
-    "부동산", "아파트", "분양", "임대", "전세", "매매",
+    # 부동산
+    "부동산", "아파트", "분양", "임대", "전세", "매매", "재건축", "청약",
+    "real estate", "mortgage", "housing market",
+    # 반려동물
     "반려동물", "강아지", "고양이", "펫",
-    "주식", "코인", "암호화폐", "비트코인",
+    "pet care", "dog", "cat",
+    # 주식/코인 (증시 포함)
+    "주식", "코인", "암호화폐", "비트코인", "증시", "주가", "코스피", "코스닥", "나스닥지수",
+    "stock market", "cryptocurrency", "bitcoin", "forex",
+    # 건강/의료
+    "건강식품", "다이어트", "건강검진", "의료비", "보험료", "진료",
+    "health supplement", "diet plan", "medical insurance",
+    # 여행/음식
     "여행", "맛집", "레시피", "요리",
+    "travel", "recipe", "restaurant",
+    # 패션/뷰티
     "패션", "뷰티", "화장품",
+    "fashion", "beauty", "cosmetics",
+    # 육아
     "육아", "임신", "출산",
+    "parenting", "pregnancy",
 ]
 GLOBAL_TARGETS = {
     "semiengineering.com": "Semiconductor Engineering",
@@ -205,10 +220,6 @@ def fetch_news():
     now_kst = datetime.now(KST)
     weekday = now_kst.weekday()
 
-    # 날짜 필터링 (기존 코드 이어서...)
-    published = getattr(e, 'published', None)
-
-
     if weekday == 6:  # 일요일
         log.info("📅 일요일은 리포트를 휴간합니다.")
         return None
@@ -245,15 +256,6 @@ def fetch_news():
                 return False
         # ✅ 반도체 키워드 최소 1개 포함 여부 확인
         return any(kw.lower() in text for kw in KEYWORDS)
-    
-    # ② 반도체 키워드 하나도 없으면 탈락 ← 이게 핵심 추가
-    matched = any(kw.lower() in text for kw in KEYWORDS)
-    if not matched:
-        log.debug(f"[필터아웃] 관련 키워드 없음: {entry.get('title', '')[:40]}")
-        return False
-    
-    return True
-
 
     log.info(f"📡 뉴스 수집 중... (기간: {search_period})")
     raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
