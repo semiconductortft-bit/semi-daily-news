@@ -74,26 +74,41 @@ EXCLUDE_KEYWORDS = [
     "parenting", "pregnancy",
 ]
 GLOBAL_TARGETS = {
+    # 반도체 전문 미디어
     "semiengineering.com": "Semiconductor Engineering",
     "3dincites.com": "3D InCites",
-    "digitimes.com": "Digitimes",
-    "eetimes.com": "EE Times",
-    "trendforce.com": "TrendForce",
     "semiconductor-digest.com": "Semi Digest",
+    "semianalysis.com": "SemiAnalysis",
     "yolegroup.com": "Yole Group",
     "kipost.net": "KIPOST",
+    # 시장조사 / 분석
+    "digitimes.com": "Digitimes",
+    "trendforce.com": "TrendForce",
+    "icinsights.com": "IC Insights",
+    # EE / 임베디드
+    "eetimes.com": "EE Times",
+    "eenewsembedded.com": "eeNews Embedded",
+    "electronicdesign.com": "Electronic Design",
+    "embedded.com": "Embedded",
+    # 하드웨어 / 테크 미디어
+    "tomshardware.com": "Tom's Hardware",
     "wccftech.com": "Wccftech",
     "techpowerup.com": "TechPowerUp",
-    "eenewsembedded.com": "eeNews Embedded",
+    "theregister.com": "The Register",
+    "spectrum.ieee.org": "IEEE Spectrum",
+    # 보도자료 / 아시아
     "prnewswire.com": "PR Newswire",
-    "asia.nikkei.com": "Nikkei Asia"
+    "asia.nikkei.com": "Nikkei Asia",
 }
 
 KOREA_TARGETS = {
     "thelec.kr": "TheElec",
     "etnews.com": "ETNews",
     "zdnet.co.kr": "ZDNet Korea",
-    "hankyung.com": "Hankyung Insight"
+    "hankyung.com": "Hankyung",
+    "sedaily.com": "Seoul Economic Daily",
+    "dt.co.kr": "Digital Times",
+    "epnc.co.kr": "EPNC",
 }
 
 ALL_TARGETS = {**GLOBAL_TARGETS, **KOREA_TARGETS}
@@ -250,12 +265,14 @@ def fetch_news():
             log.warning(f"RSS 파싱 실패 ({region}): {e}")
             return []
     def is_relevant_entry(entry):
-        text = (entry.get("title", "") + " " + entry.get("summary", "")).lower()
+        title = entry.get("title", "").lower()
+        full_text = (title + " " + entry.get("summary", "")).lower()
+        # 제외 키워드: 제목+요약 모두 검사
         for kw in EXCLUDE_KEYWORDS:
-            if kw in text:
+            if kw.lower() in full_text:
                 return False
-        # ✅ 반도체 키워드 최소 1개 포함 여부 확인
-        return any(kw.lower() in text for kw in KEYWORDS)
+        # 반도체 키워드: 제목에서만 검사 (summary 오염 방지)
+        return any(kw.lower() in title for kw in KEYWORDS)
 
     log.info(f"📡 뉴스 수집 중... (기간: {search_period})")
     raw_articles.extend(get_rss_entries(GLOBAL_TARGETS, "US", "en-US"))
@@ -325,17 +342,21 @@ def fetch_news():
     for src in buckets:
         buckets[src].sort(key=lambda x: x['parsed_date'], reverse=True)
 
-    # ── 라운드-로빈으로 소스 다양성 보장하며 최대 N개 선택 ──
+    # ── 라운드-로빈: 소스당 최대 MAX_PER_SOURCE개, 총 MAX_ARTICLES개 선택 ──
+    MAX_PER_SOURCE = 2
+    source_counts = defaultdict(int)
     final_selection = []
-    while len(final_selection) < MAX_ARTICLES:
-        active_sources = [s for s in buckets if buckets[s]]
-        if not active_sources:
-            break
-        # 매 라운드마다 남은 소스를 순회
-        for src in active_sources:
+
+    changed = True
+    while len(final_selection) < MAX_ARTICLES and changed:
+        changed = False
+        for src in list(buckets.keys()):
             if len(final_selection) >= MAX_ARTICLES:
                 break
-            final_selection.append(buckets[src].pop(0))
+            if buckets[src] and source_counts[src] < MAX_PER_SOURCE:
+                final_selection.append(buckets[src].pop(0))
+                source_counts[src] += 1
+                changed = True
 
     final_selection.sort(key=lambda x: x['parsed_date'], reverse=True)
     log.info(f"✅ 최종 선정 기사: {len(final_selection)}개")
