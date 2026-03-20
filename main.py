@@ -589,6 +589,113 @@ def generate_kakao_briefing(news_text, weather_str, dust_str):
 
 
 # =========================================================
+# 5-2. 기사별 6하원칙 요약 생성 (Gemini)
+# =========================================================
+def generate_article_summaries(news_text):
+    """각 기사별 6하원칙 + 반도체 아키텍처 키워드 3문장 개조식 요약 (한글)."""
+    log.info("📝 기사별 6하원칙 요약 생성 중...")
+
+    prompt = f"""
+    당신은 반도체 패키징 소재 개발 전문가입니다.
+    아래 뉴스 목록의 각 기사 제목을 바탕으로, 6하원칙(언제·어디서·누가·무엇을·왜·어떻게)에 맞게
+    핵심 내용을 추론하여 한글 개조식 3문장으로 요약하세요.
+
+    [작성 규칙]
+    - 6하원칙 중 기사 제목에서 파악 가능한 요소를 중심으로 작성
+    - HBM, SOCAMM, 인터포저, 유리기판, LPDDR, HBF, CoWoS, HBM3E, HBM4, 칩렛, EMC,
+      Underfill, BSPDN, 하이브리드 본딩, TC-NCF, MUF, CXL, 팬아웃, FOWLP, RDL 등
+      반도체 아키텍처/소재 키워드를 관련 있으면 반드시 1개 이상 포함
+    - 각 문장은 30~60자 내외의 간결한 개조식 (명사형 종결)
+    - 3번째 문장은 향후 계획·전망·기술적 함의로 마무리
+    - 제목에서 유추할 수 없는 내용은 추측하지 말 것
+    - 반드시 한글로 작성
+
+    [출력 형식 - 반드시 아래 형식 준수]
+    ▶ 1. [기사 제목]
+    • [6하원칙 요약 문장 1]
+    • [6하원칙 요약 문장 2 - 아키텍처/소재 키워드 포함]
+    • [계획·전망·기술적 함의]
+
+    ▶ 2. [기사 제목]
+    • ...
+
+    (뉴스 목록의 모든 기사에 대해 반복)
+
+    [뉴스 목록]:
+    {news_text}
+    """
+
+    return call_gemini(prompt, tag="기사요약")
+
+
+def send_kakao_summary_messages(summary_text):
+    """기사 요약을 카카오톡 메시지로 분할 전송 (950자 제한 대응)."""
+    import re
+
+    KST = timezone(timedelta(hours=9))
+    today_str = datetime.now(KST).strftime("%m월 %d일")
+    MAX_LEN = 900
+
+    # ▶ 로 구분된 기사별 분리
+    articles = re.split(r'(?=▶)', summary_text.strip())
+    articles = [a.strip() for a in articles if a.strip()]
+
+    if not articles:
+        log.warning("⚠️ 요약 메시지 파싱 실패")
+        return
+
+    header = f"📋 [{today_str}] 기사별 심층 요약\n{'─' * 20}\n"
+
+    # 950자 이내로 배치 묶기
+    batches = []
+    current = header
+    for article in articles:
+        candidate = current + article + "\n\n"
+        if len(candidate) > MAX_LEN and current != header:
+            batches.append(current.rstrip())
+            current = header + article + "\n\n"
+        else:
+            current = candidate
+    if current != header:
+        batches.append(current.rstrip())
+
+    access_token = get_new_kakao_token()
+    if not access_token:
+        log.error("❌ 카카오 토큰 갱신 실패 (요약 전송)")
+        return
+
+    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    for i, batch in enumerate(batches):
+        if len(batches) > 1:
+            batch += f"\n({i + 1}/{len(batches)})"
+
+        template = {
+            "object_type": "text",
+            "text": batch,
+            "link": {"web_url": "https://kakao.com", "mobile_web_url": "https://kakao.com"}
+        }
+
+        try:
+            res = requests.post(url, headers=headers,
+                                data={"template_object": json.dumps(template)},
+                                timeout=10)
+            if res.status_code == 200:
+                log.info(f"✅ 요약 메시지 {i + 1}/{len(batches)} 전송 성공")
+            else:
+                log.error(f"❌ 요약 메시지 {i + 1} 실패 ({res.status_code}): {res.text}")
+        except requests.RequestException as e:
+            log.error(f"❌ 요약 메시지 전송 에러: {e}")
+
+        if i < len(batches) - 1:
+            time.sleep(3)
+
+
+# =========================================================
 # 6. 스타일 강제 오버라이딩 함수 (GitHub Pages)
 # =========================================================
 def apply_custom_css():
@@ -824,9 +931,18 @@ def main():
     weather_str, dust_str = get_weather_info()
     log.info(f"🌤️ {weather_str} | {dust_str}")
 
-    # 카카오톡 전송
+    # 카카오톡 브리핑 전송 (헤드라인 요약)
     kakao_msg = generate_kakao_briefing(news_text, weather_str, dust_str)
     send_kakao_message(kakao_msg, web_url)
+
+    # 기사별 6하원칙 요약 전송 (별도 메시지)
+    log.info("☕ 요약 생성 전 대기 (30초)...")
+    time.sleep(30)
+    summary_text = generate_article_summaries(news_text)
+    if summary_text:
+        send_kakao_summary_messages(summary_text)
+    else:
+        log.warning("⚠️ 기사별 요약 생성 실패 - 건너뜀")
 
     # 이메일 전송
     send_email(
