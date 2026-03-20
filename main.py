@@ -6,7 +6,6 @@ import feedparser
 import urllib.parse
 import smtplib
 import logging
-import unicodedata
 from datetime import datetime, timedelta, timezone
 from google import genai
 from collections import defaultdict
@@ -645,9 +644,7 @@ def send_kakao_summary_messages(summary_text):
         log.warning("⚠️ 요약 메시지 파싱 실패")
         return
 
-    title = f"📋 [{today_str}] 기사별 심층 요약"
-    line_len = sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in title)
-    header = f"{title}\n{'─' * line_len}\n"
+    header = f"📋 [{today_str}] 기사별 심층 요약\n"
 
     # 950자 이내로 배치 묶기
     batches = []
