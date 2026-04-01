@@ -178,7 +178,7 @@ def extract_structured_data(articles, idx_offset=0):
 
 추출 항목:
 - idx: 기사 번호 (입력과 동일)
-- country: 주요 국가 (한국 / 미국 / 대만 / 중국 / 일본 / 유럽 / 기타 중 하나)
+- country: 주요 국가 (한국 / 미국 / 대만 / 중국 / 일본 / 유럽 / 인도 / 기타 중 하나)
 - company: 주요 반도체 업체 (삼성전자 / SK하이닉스 / TSMC / 인텔 / 마이크론 / GlobalFoundries / SMIC / UMC / NVIDIA / AMD / Qualcomm / ASML / 기타 중 하나, 복수면 가장 대표적인 1개)
 - architecture: 반도체 아키텍처/공정 (HBM / HBM3E / HBM4 / DRAM / NAND / Logic / FinFET / GAA / 2nm / 3nm / 4nm / 5nm / 7nm / LPDDR / GDDR / CoWoS / 인터포저 / 유리기판 / 기타 중 해당하는 것, 없으면 "해당없음")
 - is_fab: Fab/공장/생산시설/공정 직접 관련 여부 (true / false)
